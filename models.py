@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Enum, Boolean
+from sqlalchemy import Column, Integer, String, Enum, Boolean, Text, Float
 from database import Base
 import enum
 
@@ -41,3 +41,16 @@ class User(Base):
     leader_title = Column(String, nullable=True)     # leader
     district = Column(String, nullable=True)         # leader
     department = Column(String, nullable=True)       # finance
+
+
+class Program(Base):
+    __tablename__ = "programs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    location = Column(String(255), nullable=False)  # <-- necessary
+    district = Column(String(255), nullable=False)
+    goal = Column(Float, default=0)
+    raised = Column(Float, default=0)
+    status = Column(String(100))

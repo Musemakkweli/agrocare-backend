@@ -89,3 +89,24 @@ class LoginResponseWithMessage(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+
+class ProgramBase(BaseModel):
+    title: str
+    description: str
+    location: str   
+    district: str
+    goal: float
+    raised: float
+    status: str
+
+
+
+class ProgramCreate(ProgramBase):
+    pass
+
+
+class ProgramOut(ProgramBase):
+    id: int
+
+    class Config:
+        from_attributes = True   # FastAPI modern (instead of orm_mode)

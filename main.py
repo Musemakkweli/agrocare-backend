@@ -235,3 +235,65 @@ def approve_user(user_id: int, db: Session = Depends(get_db)):
     db.refresh(user)
 
     return user
+ # =====================================
+# PROGRAMS API
+# =====================================
+
+# GET all programs
+@app.get("/api/programs", response_model=list[schemas.ProgramOut])
+def get_programs(db: Session = Depends(get_db)):
+    return db.query(models.Program).all()
+
+
+# GET one program
+@app.get("/api/programs/{program_id}", response_model=schemas.ProgramOut)
+def get_program(program_id: int, db: Session = Depends(get_db)):
+    program = db.query(models.Program).filter(models.Program.id == program_id).first()
+
+    if not program:
+        raise HTTPException(404, "Program not found")
+
+    return program
+
+
+# CREATE program
+@app.post("/api/programs", response_model=schemas.ProgramOut)
+def create_program(program: schemas.ProgramCreate, db: Session = Depends(get_db)):
+    new_program = models.Program(**program.dict())
+
+    db.add(new_program)
+    db.commit()
+    db.refresh(new_program)
+
+    return new_program
+
+
+# UPDATE program
+@app.put("/api/programs/{program_id}", response_model=schemas.ProgramOut)
+def update_program(program_id: int, data: schemas.ProgramCreate, db: Session = Depends(get_db)):
+    program = db.query(models.Program).filter(models.Program.id == program_id).first()
+
+    if not program:
+        raise HTTPException(404, "Program not found")
+
+    for key, value in data.dict().items():
+        setattr(program, key, value)
+
+    db.commit()
+    db.refresh(program)
+
+    return program
+
+
+# DELETE program
+@app.delete("/api/programs/{program_id}")
+def delete_program(program_id: int, db: Session = Depends(get_db)):
+    program = db.query(models.Program).filter(models.Program.id == program_id).first()
+
+    if not program:
+        raise HTTPException(404, "Program not found")
+
+    db.delete(program)
+    db.commit()
+
+    return {"message": "Program deleted"}
