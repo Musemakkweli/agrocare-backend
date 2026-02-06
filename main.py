@@ -26,6 +26,12 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+if __name__ == "__main__":
+    import os
+    import uvicorn
+
+    port = int(os.environ.get("PORT", 8000))  # Use Render-assigned port
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
 
 
 # ======================
