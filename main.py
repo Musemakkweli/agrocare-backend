@@ -10,25 +10,28 @@ from database import Base, engine, SessionLocal
 import models, schemas
 
 # ======================
+# Setup FastAPI app first
+# ======================
+app = FastAPI(title="AgroCare Backend 🚀")
+
+# ======================
 # CORS Configuration
 # ======================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
+    allow_origins=["*"],  # In production, specify exact frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 # ======================
-# Setup
+# Create tables
 # ======================
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="AgroCare Backend 🚀")
-
-
 # ======================
-# Security Config
+# Security config, endpoints, etc.
 # ======================
 SECRET_KEY = "supersecretkey123"
 ALGORITHM = "HS256"
@@ -36,6 +39,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
 if __name__ == "__main__":
     import os
     import uvicorn
