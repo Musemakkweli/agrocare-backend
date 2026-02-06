@@ -4,11 +4,21 @@ from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
+from fastapi.middleware.cors import CORSMiddleware
 
 from database import Base, engine, SessionLocal
 import models, schemas
 
-
+# ======================
+# CORS Configuration
+# ======================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify exact origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # ======================
 # Setup
 # ======================
