@@ -173,7 +173,8 @@ def farmer_profile(user_id: int, profile: schemas.FarmerProfile, db: Session = D
         crop_type=user.crop_type,
         phone=user.phone
     )
-
+# ---------------------
+# Agronomist
 
 @app.put("/profile/agronomist/{user_id}", response_model=schemas.AgronomistProfile)
 def agronomist_profile(user_id: int, profile: schemas.AgronomistProfile, db: Session = Depends(get_db)):
@@ -184,7 +185,8 @@ def agronomist_profile(user_id: int, profile: schemas.AgronomistProfile, db: Ses
         phone=user.phone
     )
 
-
+# ---------------------
+# Donor
 @app.put("/profile/donor/{user_id}", response_model=schemas.DonorProfile)
 def donor_profile(user_id: int, profile: schemas.DonorProfile, db: Session = Depends(get_db)):
     user = update_profile(user_id, profile, db)
@@ -195,7 +197,8 @@ def donor_profile(user_id: int, profile: schemas.DonorProfile, db: Session = Dep
         phone=user.phone
     )
 
-
+# ---------------------
+# Leader
 @app.put("/profile/leader/{user_id}", response_model=schemas.LeaderProfile)
 def leader_profile(user_id: int, profile: schemas.LeaderProfile, db: Session = Depends(get_db)):
     user = update_profile(user_id, profile, db)
@@ -205,7 +208,8 @@ def leader_profile(user_id: int, profile: schemas.LeaderProfile, db: Session = D
         phone=user.phone
     )
 
-
+# ---------------------
+# Finance
 @app.put("/profile/finance/{user_id}", response_model=schemas.FinanceProfile)
 def finance_profile(user_id: int, profile: schemas.FinanceProfile, db: Session = Depends(get_db)):
     user = update_profile(user_id, profile, db)
@@ -297,3 +301,109 @@ def delete_program(program_id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "Program deleted"}
+
+# -------------------------
+# Get program by ID
+
+@app.get("/api/programs/{program_id}", response_model=schemas.ProgramOut)
+def get_program(program_id: int, db: Session = Depends(get_db)):
+    program = db.query(models.Program).filter(models.Program.id == program_id).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Program not found")
+    return program
+
+
+# -------------------------
+# Card donation
+# -------------------------
+@app.post("/api/donations/card", response_model=schemas.DonationOut)
+def donate_card(donation: schemas.DonationCard, db: Session = Depends(get_db)):
+    program = db.query(models.Program).filter(
+        models.Program.id == donation.program_id
+    ).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Program not found")
+
+    new_donation = models.Donation(
+        program_id=donation.program_id,
+        donor_name=donation.donor_name,
+        amount=donation.amount,
+        payment_method="card",
+        card_info=donation.card_info.dict(),  # ✅ convert Pydantic model to dict
+    )
+
+    db.add(new_donation)
+    program.raised += donation.amount
+    db.commit()
+    db.refresh(new_donation)
+    db.refresh(program)
+    return new_donation
+
+
+# -------------------------
+# Mobile donation
+# -------------------------
+@app.post("/api/donations/mobile", response_model=schemas.DonationOut)
+def donate_mobile(donation: schemas.DonationMobile, db: Session = Depends(get_db)):
+    program = db.query(models.Program).filter(
+        models.Program.id == donation.program_id
+    ).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Program not found")
+
+    new_donation = models.Donation(
+        program_id=donation.program_id,
+        donor_name=donation.donor_name,
+        amount=donation.amount,
+        payment_method="mobile",
+        mobile_number=donation.mobile_number,
+    )
+
+    db.add(new_donation)
+    program.raised += donation.amount
+    db.commit()
+    db.refresh(new_donation)
+    db.refresh(program)
+    return new_donation
+
+
+# -------------------------
+# Bank donation
+# -------------------------
+@app.post("/api/donations/bank", response_model=schemas.DonationOut)
+def donate_bank(donation: schemas.DonationBank, db: Session = Depends(get_db)):
+    program = db.query(models.Program).filter(
+        models.Program.id == donation.program_id
+    ).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Program not found")
+
+    new_donation = models.Donation(
+        program_id=donation.program_id,
+        donor_name=donation.donor_name,
+        amount=donation.amount,
+        payment_method="bank",
+        bank_details=donation.bank_details.dict(),  # ✅ convert Pydantic model to dict
+    )
+
+    db.add(new_donation)
+    program.raised += donation.amount
+    db.commit()
+    db.refresh(new_donation)
+    db.refresh(program)
+    return new_donation
+
+
+# Get all donations
+# -------------------------
+@app.get("/api/donations", response_model=list[schemas.DonationOut])
+def get_all_donations(db: Session = Depends(get_db)):
+    donations = db.query(models.Donation).all()
+    return donations
+
+# -------------------------
+# Get donations by program
+@app.get("/api/donations/by-program", response_model=list[schemas.DonationOut])
+def get_donations_by_program(program_id: int, db: Session = Depends(get_db)):
+    donations = db.query(models.Donation).filter(models.Donation.program_id == program_id).all()
+    return donations

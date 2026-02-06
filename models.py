@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Enum, Boolean, Text, Float
+from sqlalchemy import Column, Integer, String, Enum, Boolean, Text, Float, JSON
 from database import Base
 import enum
 
@@ -54,3 +54,17 @@ class Program(Base):
     goal = Column(Float, default=0)
     raised = Column(Float, default=0)
     status = Column(String(100))
+
+    
+
+class Donation(Base):
+    __tablename__ = "donations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    program_id = Column(Integer, nullable=False)
+    donor_name = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    payment_method = Column(String, nullable=False)
+    card_info = Column(JSON, nullable=True)        # For Visa/Mastercard
+    mobile_number = Column(String, nullable=True)  # For MTN/Airtel
+    bank_details = Column(JSON, nullable=True)     # For Bank transfers

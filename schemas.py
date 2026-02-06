@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr,  field_validator
 from typing import Optional
 
 # ===== BASE =====
@@ -90,15 +90,15 @@ class LoginResponseWithMessage(BaseModel):
     token_type: str = "bearer"
     user: UserResponse
 
+
 class ProgramBase(BaseModel):
     title: str
-    description: str
-    location: str   
-    district: str
+    description: Optional[str] = None
+    location: Optional[str] = None
+    district: Optional[str] = None
     goal: float
-    raised: float
-    status: str
-
+    raised: float = 0
+    status: Optional[str] = "active"
 
 
 class ProgramCreate(ProgramBase):
@@ -109,4 +109,63 @@ class ProgramOut(ProgramBase):
     id: int
 
     class Config:
-        from_attributes = True   # FastAPI modern (instead of orm_mode)
+        from_attributes = True
+
+
+# -------------------------
+# Base donation info
+# -------------------------
+class DonationBase(BaseModel):
+    program_id: int
+    donor_name: str
+    amount: float
+
+
+# -------------------------
+# Card payment
+# -------------------------
+class CardInfo(BaseModel):
+    number: str
+    name: str
+    expiry: str
+
+
+class DonationCard(DonationBase):
+    payment_method: str = "card"
+    card_info: CardInfo
+
+
+# -------------------------
+# Mobile payment (MoMo)
+# -------------------------
+class DonationMobile(DonationBase):
+    payment_method: str = "mobile"
+    mobile_number: str
+
+
+# -------------------------
+# Bank payment
+# -------------------------
+class BankDetails(BaseModel):
+    bank_name: str
+    account_name: str
+    account_number: str
+
+
+class DonationBank(DonationBase):
+    payment_method: str = "bank"
+    bank_details: BankDetails
+
+
+# -------------------------
+# Output schema
+# -------------------------
+class DonationOut(DonationBase):
+    id: int
+    payment_method: str
+    card_info: CardInfo | None = None
+    mobile_number: str | None = None
+    bank_details: BankDetails | None = None
+
+    class Config:
+        from_attributes = True
