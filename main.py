@@ -52,6 +52,16 @@ if __name__ == "__main__":
 # Password Helpers
 # ======================
 def hash_password(password: str):
+    # bcrypt has a maximum input of 72 bytes. Validate and return a clear error
+    # so callers (HTTP endpoints) can return a proper 400 instead of a 500.
+    if isinstance(password, str):
+        b = password.encode("utf-8")
+    else:
+        b = bytes(password)
+
+    if len(b) > 72:
+        raise HTTPException(status_code=400, detail="Password too long; maximum is 72 bytes")
+
     return pwd_context.hash(password)
 
 
@@ -124,6 +134,7 @@ def register_user(user: schemas.UserRegister, db: Session = Depends(get_db)):
         raise HTTPException(400, "Email already registered")
 
     new_user = models.User(
+        full_name=user.full_name,
         email=user.email,
         password=hash_password(user.password),
         role=user.role,
