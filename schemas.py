@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr,  field_validator
+from pydantic import BaseModel, EmailStr,  root_validator
 from typing import Optional
 
 # ===== BASE =====
@@ -21,6 +21,7 @@ class UserResponse(BaseModel):
     id: int
     full_name: str
     email: EmailStr
+    phone: str | None  
     role: str
     is_approved: bool
 
@@ -56,6 +57,14 @@ class DonorProfile(BaseModel):
     class Config:
         from_attributes = True
 
+    # Optional: normalize donor_type to lowercase automatically
+    @root_validator(pre=True)
+    def normalize_donor_type(cls, values):
+        donor_type = values.get("donor_type")
+        if donor_type:
+            values["donor_type"] = donor_type.lower()  # converts ORGANIZATION → organization
+        return values
+
 # Leader
 class LeaderProfile(BaseModel):
     leader_title: str
@@ -73,10 +82,10 @@ class FinanceProfile(BaseModel):
     class Config:
         from_attributes = True
 
-# ===== LOGIN =====
 class UserLogin(BaseModel):
-    email: EmailStr
+    identifier: str
     password: str
+
 
 # ===== TOKEN =====
 class Token(BaseModel):

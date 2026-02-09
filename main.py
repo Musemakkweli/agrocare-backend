@@ -5,6 +5,7 @@ from passlib.context import CryptContext
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import or_
 
 from database import Base, engine, SessionLocal
 import models, schemas
@@ -136,6 +137,7 @@ def register_user(user: schemas.UserRegister, db: Session = Depends(get_db)):
     new_user = models.User(
         full_name=user.full_name,
         email=user.email,
+        phone=user.phone,
         password=hash_password(user.password),
         role=user.role,
         is_approved=False
@@ -148,16 +150,22 @@ def register_user(user: schemas.UserRegister, db: Session = Depends(get_db)):
     return new_user
 
 
+
 # ======================
-# Login  ✅ NEW
+# Login (email OR phone)
 # ======================
 @app.post("/login", response_model=schemas.LoginResponseWithMessage)
 def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
 
-    db_user = db.query(models.User).filter(models.User.email == user.email).first()
+    db_user = db.query(models.User).filter(
+        or_(
+            models.User.email == user.identifier,
+            models.User.phone == user.identifier
+        )
+    ).first()
 
     if not db_user or not verify_password(user.password, db_user.password):
-        raise HTTPException(400, "Invalid email or password")
+        raise HTTPException(400, "Invalid email or phone or password")
 
     if not db_user.is_approved:
         raise HTTPException(403, "User not approved yet")
@@ -175,17 +183,19 @@ def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
 # ======================
 def update_profile(user_id: int, profile, db: Session):
     user = db.query(models.User).filter(models.User.id == user_id).first()
-
     if not user:
         raise HTTPException(404, "User not found")
 
+    # Update fields from the request
     for field, value in profile.dict(exclude_unset=True).items():
         setattr(user, field, value)
+
+    # ✅ Mark profile as completed
+    user.profile_completed = True
 
     db.commit()
     db.refresh(user)
     return user
-
 
 # ======================
 # Profile Routes (updated response)
@@ -220,7 +230,17 @@ def agronomist_profile(user_id: int, profile: schemas.AgronomistProfile, db: Ses
 # Donor
 @app.put("/profile/donor/{user_id}", response_model=schemas.DonorProfile)
 def donor_profile(user_id: int, profile: schemas.DonorProfile, db: Session = Depends(get_db)):
-    user = update_profile(user_id, profile, db)
+    # Normalize donor_type to lowercase to match DB enum
+    if profile.donor_type:
+        profile.donor_type = profile.donor_type.lower()
+
+    try:
+        # Use the helper to update fields AND mark profile_completed
+        user = update_profile(user_id, profile, db)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # ✅ Include profile_completed in the response if you want frontend to update localStorage
     return schemas.DonorProfile(
         donor_type=user.donor_type,
         org_name=user.org_name,
