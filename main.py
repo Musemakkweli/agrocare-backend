@@ -176,8 +176,15 @@ def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
         "message": "Successfully logged in",
         "access_token": token,
         "token_type": "bearer",
-        "user": db_user
+
+        # ✅ send full user
+        "user": db_user,
+
+        # ✅ send profile status
+        "is_profile_completed": db_user.is_profile_completed
+
     }
+
 # ======================
 # Helper function
 # ======================
@@ -201,7 +208,7 @@ def update_profile(user_id: int, profile, db: Session):
 # Profile Routes (updated response)
 # ======================
 
-@app.put("/profile/farmer/{user_id}", response_model=schemas.FarmerProfile)
+@app.put("/profile/farmer/{user_id}", response_model=schemas.FarmerProfileResponse)
 def farmer_profile(user_id: int, profile: schemas.FarmerProfile, db: Session = Depends(get_db)):
     user = update_profile(user_id, profile, db)
     return schemas.FarmerProfileResponse(
@@ -210,10 +217,12 @@ def farmer_profile(user_id: int, profile: schemas.FarmerProfile, db: Session = D
         email=user.email,
         role=user.role,
         is_approved=user.is_approved,
+        is_profile_completed=user.profile_completed,  # ✅ include this
         farm_location=user.farm_location,
         crop_type=user.crop_type,
         phone=user.phone
     )
+
 # ---------------------
 # Agronomist
 

@@ -24,16 +24,30 @@ class UserResponse(BaseModel):
     phone: str | None  
     role: str
     is_approved: bool
+    is_profile_completed: bool 
 
     class Config:
         from_attributes = True
 
 # ===== PROFILE COMPLETION SCHEMAS =====
-# Farmer
+
+# Existing FarmerProfile (used for input)
 class FarmerProfile(BaseModel):
-    farm_location: str
-    crop_type: str
-    phone: Optional[str] = None
+    farm_location: Optional[str]
+    crop_type: Optional[str]
+    phone: Optional[str]
+
+# ✅ New response schema
+class FarmerProfileResponse(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    role: str
+    is_approved: bool
+    is_profile_completed: bool 
+    farm_location: Optional[str]
+    crop_type: Optional[str]
+    phone: Optional[str]
 
     class Config:
         from_attributes = True
