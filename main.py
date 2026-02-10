@@ -198,7 +198,7 @@ def update_profile(user_id: int, profile, db: Session):
         setattr(user, field, value)
 
     # ✅ Mark profile as completed
-    user.profile_completed = True
+    user.is_profile_completed = True
 
     db.commit()
     db.refresh(user)
@@ -217,7 +217,7 @@ def farmer_profile(user_id: int, profile: schemas.FarmerProfile, db: Session = D
         email=user.email,
         role=user.role,
         is_approved=user.is_approved,
-        is_profile_completed=user.profile_completed,  # ✅ include this
+        is_profile_completed=user.is_profile_completed,  # ✅ include this
         farm_location=user.farm_location,
         crop_type=user.crop_type,
         phone=user.phone
