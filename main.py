@@ -1,14 +1,30 @@
-from fastapi import FastAPI, HTTPException, Depends
+from random import random
+import os
+import time
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File,Form
+from supabase import create_client, Client
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 from jose import jwt, JWTError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import or_
-
+from typing import List
 from database import Base, engine, SessionLocal
-import models, schemas
+import models
+import schemas
+import random
+from typing import Optional
+from dotenv import load_dotenv
+from models import Complaint, ComplaintStatus
+load_dotenv()  # load variables from .env
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+BUCKET_NAME = os.getenv("BUCKET_NAME")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ======================
 # Setup FastAPI app first
@@ -467,3 +483,172 @@ def get_all_donations(db: Session = Depends(get_db)):
 def get_donations_by_program(program_id: int, db: Session = Depends(get_db)):
     donations = db.query(models.Donation).filter(models.Donation.program_id == program_id).all()
     return donations
+
+from datetime import date
+from fastapi import Depends, HTTPException
+from sqlalchemy.orm import Session
+
+@app.get("/farmer/{user_id}/stats")
+def get_farmer_stats(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    total_fields = (
+        db.query(models.Field)
+        .filter(models.Field.farmer_id == user_id)
+        .count()
+    )
+
+    upcoming_harvests = (
+        db.query(models.Harvest)
+        .filter(
+            models.Harvest.farmer_id == user_id,
+            models.Harvest.harvest_date > date.today()
+        )
+        .count()
+    )
+
+    pest_alerts = (
+        db.query(models.Alert)
+        .filter(
+            models.Alert.farmer_id == user_id,
+            models.Alert.type == "pest"
+        )
+        .count()
+    )
+
+    weather_alerts = (
+        db.query(models.Alert)
+        .filter(
+            models.Alert.farmer_id == user_id,
+            models.Alert.type == "weather"
+        )
+        .count()
+    )
+
+    return {
+        "total_fields": total_fields,
+        "upcoming_harvests": upcoming_harvests,
+        "pest_alerts": pest_alerts,
+        "weather_alerts": weather_alerts
+    }
+
+# Example crop health data (replace with real logic)
+
+@app.get("/farmer/{user_id}/crop-health")
+def get_crop_health(user_id: int, db: Session = Depends(get_db)):
+    # Example: last 5 weeks
+    data = []
+    for i in range(1, 6):
+        # Replace with actual computation per week
+        data.append({"week": f"W{i}", "health": random.randint(50, 90)})
+    return data
+
+# complaints endpoints
+@app.post("/complaints", response_model=schemas.ComplaintOut)
+def create_complaint(
+    user_id: int = Form(...),
+    title: str = Form(...),
+    type: str = Form(...),
+    description: str = Form(...),
+    location: str = Form(...),
+    image: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    image_url = None
+    if image:
+        filename = f"{int(time.time())}_{image.filename}"
+        content = image.file.read()
+
+        # Remove the invalid res.error check
+        try:
+            supabase.storage.from_(BUCKET_NAME).upload(filename, content)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Supabase upload failed: {str(e)}")
+
+        # get_public_url returns a string directly — no .public_url
+        image_url = supabase.storage.from_(BUCKET_NAME).get_public_url(filename)
+
+    complaint = models.Complaint(
+        title=title,
+        type=type,
+        description=description,
+        location=location,
+        image=image_url,
+        status=models.ComplaintStatus.Pending,
+        created_by=user_id
+    )
+
+    db.add(complaint)
+    db.commit()
+    db.refresh(complaint)
+    return complaint
+
+# Get complaints by user
+
+@app.get("/complaints/user/{user_id}", response_model=List[schemas.ComplaintOut])
+def get_complaints_by_user(user_id: int, db: Session = Depends(get_db)):
+    # Query complaints for this user
+    complaints = db.query(models.Complaint).filter(models.Complaint.created_by == user_id).all()
+    
+    if not complaints:
+        raise HTTPException(status_code=404, detail="No complaints found for this user")
+    
+    return complaints
+# Get all complaints (for admin)
+@app.get("/complaints", response_model=List[schemas.ComplaintOut])
+def get_all_complaints(db: Session = Depends(get_db)):
+    complaints = db.query(models.Complaint).all()
+    
+    if not complaints:
+        raise HTTPException(status_code=404, detail="No complaints found")
+    
+    return complaints
+# Update complaint status (admin)
+@app.put("/complaints/{complaint_id}", response_model=schemas.ComplaintOut)
+def update_complaint(
+    complaint_id: int,
+    title: Optional[str] = Form(None),
+    type: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    location: Optional[str] = Form(None),
+    image: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    complaint = db.query(models.Complaint).filter(models.Complaint.id == complaint_id).first()
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    if title is not None:
+        complaint.title = title
+    if type is not None:
+        complaint.type = type
+    if description is not None:
+        complaint.description = description
+    if location is not None:
+        complaint.location = location
+
+    if image:
+        filename = f"{int(time.time())}_{image.filename}"
+        content = image.file.read()
+        supabase.storage.from_(BUCKET_NAME).upload(filename, content)
+
+        # ✅ Get public URL directly
+        complaint.image = supabase.storage.from_(BUCKET_NAME).get_public_url(filename)
+
+    db.commit()
+    db.refresh(complaint)
+    return complaint
+#Delete complaint (admin)
+    
+@app.delete("/complaints/{complaint_id}", response_model=dict)
+def delete_complaint(complaint_id: int, db: Session = Depends(get_db)):
+    complaint = db.query(models.Complaint).filter(models.Complaint.id == complaint_id).first()
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+    
+    db.delete(complaint)
+    db.commit()
+
+    return {"message": f"Complaint with ID {complaint_id} has been deleted successfully."}

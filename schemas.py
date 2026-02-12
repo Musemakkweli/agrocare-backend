@@ -1,5 +1,7 @@
 from pydantic import BaseModel, EmailStr,  root_validator
 from typing import Optional
+from datetime import datetime
+from models import ComplaintStatus
 
 # ===== BASE =====
 class BaseUser(BaseModel):
@@ -189,6 +191,33 @@ class DonationOut(DonationBase):
     card_info: CardInfo | None = None
     mobile_number: str | None = None
     bank_details: BankDetails | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class ComplaintBase(BaseModel):
+    title: str
+    type: str
+    description: str
+    location: str
+
+
+class ComplaintCreate(ComplaintBase):
+    created_by: int
+    status: ComplaintStatus = ComplaintStatus.Pending
+
+
+class ComplaintUpdate(ComplaintBase):
+    status: ComplaintStatus
+
+
+class ComplaintOut(ComplaintBase):
+    id: int
+    image: Optional[str]
+    status: ComplaintStatus
+    created_at: datetime
+    created_by: int
 
     class Config:
         from_attributes = True

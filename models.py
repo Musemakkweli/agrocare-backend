@@ -1,5 +1,7 @@
-from sqlalchemy import Column, Integer, String, Enum, Boolean, Text, Float, JSON
+from sqlalchemy import Column, Integer, String, Boolean, Enum, Float, ForeignKey, Date, DateTime,  Text, JSON,func, TIMESTAMP
+from sqlalchemy.orm import relationship
 from database import Base
+import datetime
 import enum
 
 # ===== ENUMS =====
@@ -68,3 +70,57 @@ class Donation(Base):
     card_info = Column(JSON, nullable=True)        # For Visa/Mastercard
     mobile_number = Column(String, nullable=True)  # For MTN/Airtel
     bank_details = Column(JSON, nullable=True)     # For Bank transfers
+
+class Field(Base):
+    __tablename__ = "fields"
+
+    id = Column(Integer, primary_key=True, index=True)
+    farmer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String, nullable=False)
+    area = Column(Float, nullable=True)
+    crop_type = Column(String, nullable=True)
+class Harvest(Base):
+    __tablename__ = "harvests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    farmer_id = Column(Integer, ForeignKey("users.id"))
+    harvest_date = Column(Date)
+    status = Column(String, default="upcoming")  # upcoming, completed
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    farmer_id = Column(Integer, ForeignKey("users.id"))
+    type = Column(String)  # pest or weather
+    message = Column(String)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+
+
+class ComplaintStatus(str, enum.Enum):
+    Pending = "Pending"
+    Resolved = "Resolved"
+    OnHold = "On Hold"
+
+
+class Complaint(Base):
+    __tablename__ = "complaints"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    title = Column(String, nullable=False)
+    type = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    location = Column(String, nullable=False)
+
+    image = Column(String)
+
+    status = Column(
+        Enum(ComplaintStatus, name="complaint_status"),
+        default=ComplaintStatus.Pending
+    )
+
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
