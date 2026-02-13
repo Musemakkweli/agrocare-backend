@@ -1,7 +1,7 @@
 from random import random
 import os
 import time
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File,Form
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File,Form,Path
 from supabase import create_client, Client
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer
@@ -488,6 +488,7 @@ from datetime import date
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
+# Farmer stats endpoint
 @app.get("/farmer/{user_id}/stats")
 def get_farmer_stats(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -652,3 +653,210 @@ def delete_complaint(complaint_id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": f"Complaint with ID {complaint_id} has been deleted successfully."}
+
+# Add a new field
+@app.post("/fields", response_model=schemas.FieldOut)
+def create_field(field: schemas.FieldCreate, db: Session = Depends(get_db)):
+    new_field = models.Field(
+        farmer_id=field.user_id,
+        name=field.name,
+        area=field.area,
+        crop_type=field.crop_type,
+        location=field.location  # ✅ added location
+    )
+    db.add(new_field)
+    db.commit()
+    db.refresh(new_field)
+    return new_field
+
+@app.get("/fields/user/{user_id}")
+def get_fields(user_id: int, db: Session = Depends(get_db)):
+    fields = db.query(models.Field).filter(models.Field.farmer_id == user_id).all()
+    return fields
+# Create a new harvest
+# -------------------
+@app.post("/harvests", response_model=schemas.HarvestOut)
+def create_harvest(harvest: schemas.HarvestCreate, db: Session = Depends(get_db)):
+    # Optional: check if field exists for this farmer
+    field = db.query(models.Field).filter(
+        models.Field.id == harvest.field_id,
+        models.Field.farmer_id == harvest.farmer_id
+    ).first()
+    if not field:
+        raise HTTPException(status_code=404, detail="Field not found for this farmer")
+
+    new_harvest = models.Harvest(
+        farmer_id=harvest.farmer_id,
+        field_id=harvest.field_id,
+        crop_type=harvest.crop_type,
+        harvest_date=harvest.harvest_date,
+        status=harvest.status
+    )
+    db.add(new_harvest)
+    db.commit()
+    db.refresh(new_harvest)
+    return new_harvest
+
+
+# -------------------
+# Get harvests for a specific user
+# -------------------
+@app.get("/harvests/user/{farmer_id}", response_model=List[schemas.HarvestOut])
+def get_harvests_by_user(farmer_id: int, db: Session = Depends(get_db)):
+    harvests = db.query(models.Harvest).filter(models.Harvest.farmer_id == farmer_id).all()
+    if not harvests:
+        raise HTTPException(status_code=404, detail="No harvests found for this user")
+    return harvests
+
+
+# -------------------
+# Get all harvests (admin)
+# -------------------
+@app.get("/harvests", response_model=List[schemas.HarvestOut])
+def get_all_harvests(db: Session = Depends(get_db)):
+    harvests = db.query(models.Harvest).all()
+    if not harvests:
+        raise HTTPException(status_code=404, detail="No harvests found")
+    return harvests
+
+# Create a pest alert
+@app.post("/pest-alerts", response_model=schemas.PestAlertOut)
+def create_pest_alert(alert: schemas.PestAlertCreate, db: Session = Depends(get_db)):
+    new_alert = models.PestAlert(**alert.dict())
+    db.add(new_alert)
+    db.commit()
+    db.refresh(new_alert)
+    return new_alert
+
+# Get all pest alerts for a farmer
+@app.get("/pest-alerts/user/{farmer_id}", response_model=List[schemas.PestAlertOut])
+def get_pest_alerts(farmer_id: int, db: Session = Depends(get_db)):
+    alerts = db.query(models.PestAlert).filter(models.PestAlert.farmer_id == farmer_id).all()
+    return alerts
+# Admin creates weather alert
+# ========================
+@app.post("/weather-alerts", response_model=schemas.WeatherAlertOut)
+def create_weather_alert(alert: schemas.WeatherAlertCreate, db: Session = Depends(get_db)):
+    new_alert = models.WeatherAlert(**alert.dict())
+    db.add(new_alert)
+    db.commit()
+    db.refresh(new_alert)
+    return new_alert
+
+# ========================
+# Get all weather alerts
+# ========================
+@app.get("/weather-alerts", response_model=List[schemas.WeatherAlertOut])
+def get_all_weather_alerts(db: Session = Depends(get_db)):
+    alerts = db.query(models.WeatherAlert).all()
+    return alerts
+
+# ========================
+# Get alerts for a specific region
+# ========================
+from sqlalchemy import func  # make sure this is imported
+
+@app.get("/weather-alerts/region/{region}", response_model=List[schemas.WeatherAlertOut])
+def get_weather_alerts_by_region(region: str, db: Session = Depends(get_db)):
+    # Trim whitespace and make it lowercase for matching
+    cleaned_region = region.strip().lower()
+
+    # Case-insensitive search in the DB
+    alerts = db.query(models.WeatherAlert).filter(
+        func.lower(models.WeatherAlert.region) == cleaned_region
+    ).all()
+
+    return alerts
+# =========================
+# Change user role (no auth)
+# =========================
+from models import Role  # import the Role enum from your models
+
+@app.put("/users/{user_id}/role", response_model=schemas.UserResponse)
+def update_user_role(user_id: int, new_role: Role, db: Session = Depends(get_db)):
+    """
+    Update a user's role and mark their profile as completed.
+    new_role must be a valid Role enum value (farmer, agronomist, donor, leader, finance, admin)
+    """
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    db_user.role = new_role.value  # store the string value in the DB
+    db_user.is_profile_completed = True  # mark profile as completed
+
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+    
+
+
+from datetime import date, timedelta
+from sqlalchemy import func
+from models import Field, Harvest, Complaint
+@app.get("/farmer/{farmer_id}/daily-activity")
+def get_daily_activity(farmer_id: int, db: Session = Depends(get_db)):
+    """
+    Returns number of farmer actions per day (last 7 days)
+    """
+
+    today = date.today()
+    week_ago = today - timedelta(days=6)
+
+    activity_map = {}
+
+    # -------- Fields --------
+    fields = (
+        db.query(
+            func.date(Field.created_at).label("day"),
+            func.count(Field.id).label("count")
+        )
+        .filter(Field.farmer_id == farmer_id)
+        .filter(Field.created_at >= week_ago)
+        .group_by("day")
+        .all()
+    )
+
+    # -------- Harvests --------
+    harvests = (
+        db.query(
+            func.date(Harvest.created_at).label("day"),
+            func.count(Harvest.id).label("count")
+        )
+        .filter(Harvest.farmer_id == farmer_id)
+        .filter(Harvest.created_at >= week_ago)
+        .group_by("day")
+        .all()
+    )
+
+    # -------- Complaints --------
+    complaints = (
+        db.query(
+            func.date(Complaint.created_at).label("day"),
+            func.count(Complaint.id).label("count")
+        )
+        .filter(Complaint.created_by == farmer_id)
+        .filter(Complaint.created_at >= week_ago)
+        .group_by("day")
+        .all()
+    )
+
+    # -------- Merge counts --------
+    for dataset in (fields, harvests, complaints):
+        for day, count in dataset:
+            activity_map[day] = activity_map.get(day, 0) + count
+
+    # -------- Build last 7 days --------
+    result = []
+    for i in range(7):
+        current_day = week_ago + timedelta(days=i)
+        result.append({
+            "day": current_day.strftime("%a"),  # Mon Tue Wed
+            "value": activity_map.get(current_day, 0)
+        })
+
+    return {
+        "success": True,
+        "message": "Daily activity fetched successfully",
+        "data": result
+    }

@@ -1,7 +1,8 @@
 from pydantic import BaseModel, EmailStr,  root_validator
-from typing import Optional
-from datetime import datetime
+from typing import Any, Optional
+from datetime import datetime, date
 from models import ComplaintStatus
+
 
 # ===== BASE =====
 class BaseUser(BaseModel):
@@ -221,3 +222,84 @@ class ComplaintOut(ComplaintBase):
 
     class Config:
         from_attributes = True
+
+class FieldBase(BaseModel):
+    name: str
+    area: Optional[float] = None
+    crop_type: Optional[str] = None
+    location: Optional[str] = None  # ✅ added location
+
+class FieldCreate(FieldBase):
+    user_id: int  # corresponds to farmer_id in DB
+
+class FieldOut(FieldBase):
+    id: int
+    farmer_id: int
+
+    class Config:
+        from_attributes = True
+    
+class HarvestBase(BaseModel):
+    farmer_id: int
+    field_id: int
+    crop_type: Optional[str]
+    harvest_date: date
+    status: Optional[str] = "upcoming"
+
+# Schema for creating a new harvest
+class HarvestCreate(HarvestBase):
+    pass
+
+# Schema for reading/output
+class HarvestOut(HarvestBase):
+    id: int
+
+    class Config:
+        from_attributes = True 
+
+class PestAlertBase(BaseModel):
+    farmer_id: int
+    field_id: int
+    pest_type: str
+    severity: Optional[str] = None
+    description: Optional[str] = None
+
+class PestAlertCreate(PestAlertBase):
+    pass
+
+class PestAlertOut(PestAlertBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Base schema
+class WeatherAlertBase(BaseModel):
+    region: str
+    alert_type: str
+    message: str
+    severity: Optional[str] = None
+
+# For creating new alert (admin input)
+class WeatherAlertCreate(WeatherAlertBase):
+    created_by_admin_id: int  # admin ID
+
+# For output/response
+class WeatherAlertOut(WeatherAlertBase):
+    id: int
+    created_at: datetime
+    created_by_admin_id: int
+
+    class Config:
+        from_attributes = True
+
+class UserRoleUpdate(BaseModel):
+    role: str  # "admin", "farmer", "leader", "donor", etc.
+
+    class Config:
+        from_attributes = True
+class APIResponse(BaseModel):
+    success: bool
+    message: str
+    data: Any

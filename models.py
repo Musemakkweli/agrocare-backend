@@ -11,6 +11,7 @@ class Role(str, enum.Enum):
     donor = "donor"
     leader = "leader"
     finance = "finance"
+    admin = "admin"
 
 class DonorType(str, enum.Enum):
     person = "person"
@@ -79,22 +80,32 @@ class Field(Base):
     name = Column(String, nullable=False)
     area = Column(Float, nullable=True)
     crop_type = Column(String, nullable=True)
+    location = Column(String, nullable=True) 
+    created_at = Column(DateTime, server_default=func.now())
 class Harvest(Base):
     __tablename__ = "harvests"
 
     id = Column(Integer, primary_key=True, index=True)
-    farmer_id = Column(Integer, ForeignKey("users.id"))
-    harvest_date = Column(Date)
-    status = Column(String, default="upcoming")  # upcoming, completed
-class Alert(Base):
-    __tablename__ = "alerts"
+    farmer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    field_id = Column(Integer, ForeignKey("fields.id"), nullable=False)
+    crop_type = Column(String, nullable=True)
+    harvest_date = Column(Date, nullable=False)
+    status = Column(String, default="upcoming")  # upcoming, completed, canceled
+    created_at = Column(DateTime, server_default=func.now())
+
+    # Optional: relationship for easier joins
+    field = relationship("Field", backref="harvests")
+  # upcoming, completed
+class PestAlert(Base):
+    __tablename__ = "pest_alerts"
 
     id = Column(Integer, primary_key=True, index=True)
-    farmer_id = Column(Integer, ForeignKey("users.id"))
-    type = Column(String)  # pest or weather
-    message = Column(String)
+    farmer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    field_id = Column(Integer, ForeignKey("fields.id"), nullable=False)  # which field the pest alert is for
+    pest_type = Column(String, nullable=False)  # e.g., locust, aphids
+    severity = Column(String, nullable=True)    # optional: low, medium, high
+    description = Column(String, nullable=True) # detailed message
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
-
 
 
 
@@ -124,3 +135,15 @@ class Complaint(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
 
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+class WeatherAlert(Base):
+    __tablename__ = "weather_alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    region = Column(String, nullable=False)  # e.g., "Huye District" or field-specific
+    alert_type = Column(String, nullable=False)  # e.g., "Rain", "Frost", "Drought"
+    message = Column(String, nullable=False)  # detailed message
+    severity = Column(String, nullable=True)  # optional: "Low", "Medium", "High"
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_by_admin_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # admin who created the alert
+
