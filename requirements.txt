@@ -8,3 +8,4 @@ email-validator
 psycopg2-binary
 supabase
 python-dotenv
+python-multipart
