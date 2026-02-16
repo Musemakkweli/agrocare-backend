@@ -673,6 +673,45 @@ def create_field(field: schemas.FieldCreate, db: Session = Depends(get_db)):
 def get_fields(user_id: int, db: Session = Depends(get_db)):
     fields = db.query(models.Field).filter(models.Field.farmer_id == user_id).all()
     return fields
+# delete a field
+
+@app.delete("/fields/{field_id}")
+def delete_field(field_id: int, db: Session = Depends(get_db)):
+    try:
+        # Fetch the field
+        field = db.query(Field).filter(Field.id == field_id).first()
+        if not field:
+            raise HTTPException(status_code=404, detail="Field not found")
+
+        # Delete the field
+        db.delete(field)
+        db.commit()
+        return {"message": f"Field {field_id} deleted successfully"}
+
+    except SQLAlchemyError as e:
+        # Rollback if anything goes wrong
+        db.rollback()
+        # Optional: log the error for debugging
+        print(f"Error deleting field: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    # update a field
+@app.put("/fields/{field_id}")
+def update_field(field_id: int, updated_field: schemas.FieldCreate, db: Session = Depends(get_db)):
+    field = db.query(Field).filter(Field.id == field_id).first()
+    if not field:
+        raise HTTPException(status_code=404, detail="Field not found")
+    for key, value in updated_field.dict(exclude_unset=True).items():
+        setattr(field, key, value)
+    db.commit()
+    db.refresh(field)
+    return field
+# Get all fields (admin)
+@app.get("/fields", response_model=List[schemas.FieldOut])
+def get_all_fields(db: Session = Depends(get_db)):
+    fields = db.query(models.Field).all()
+    return fields
+
+
 # Create a new harvest
 # -------------------
 @app.post("/harvests", response_model=schemas.HarvestOut)
@@ -719,6 +758,29 @@ def get_all_harvests(db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No harvests found")
     return harvests
 
+# Update an existing harvest
+# ======================
+@app.put("/harvests/{harvest_id}", response_model=schemas.HarvestOut)
+def update_harvest(harvest_id: int, updated_harvest: schemas.HarvestCreate, db: Session = Depends(get_db)):
+    harvest = db.query(models.Harvest).filter(models.Harvest.id == harvest_id).first()
+    if not harvest:
+        raise HTTPException(status_code=404, detail="Harvest not found")
+    for key, value in updated_harvest.dict(exclude_unset=True).items():
+        setattr(harvest, key, value)
+    db.commit()
+    db.refresh(harvest)
+    return harvest
+# Delete a harvest
+# ======================
+@app.delete("/harvests/{harvest_id}")
+def delete_harvest(harvest_id: int, db: Session = Depends(get_db)):
+    harvest = db.query(models.Harvest).filter(models.Harvest.id == harvest_id).first()
+    if not harvest:
+        raise HTTPException(status_code=404, detail="Harvest not found")
+    db.delete(harvest)
+    db.commit()
+    return {"detail": "Harvest deleted successfully"}
+
 # Create a pest alert
 @app.post("/pest-alerts", response_model=schemas.PestAlertOut)
 def create_pest_alert(alert: schemas.PestAlertCreate, db: Session = Depends(get_db)):
@@ -733,6 +795,44 @@ def create_pest_alert(alert: schemas.PestAlertCreate, db: Session = Depends(get_
 def get_pest_alerts(farmer_id: int, db: Session = Depends(get_db)):
     alerts = db.query(models.PestAlert).filter(models.PestAlert.farmer_id == farmer_id).all()
     return alerts
+
+# Update a pest alert
+# =====================
+@app.put("/pest-alerts/{pest_id}", response_model=schemas.PestAlertOut)
+def update_pest_alert(pest_id: int, updated_pest: schemas.PestAlertBase, db: Session = Depends(get_db)):
+    pest = db.query(models.PestAlert).filter(models.PestAlert.id == pest_id).first()
+    if not pest:
+        raise HTTPException(status_code=404, detail="Pest alert not found")
+    
+    # Update only the fields that are provided
+    for key, value in updated_pest.dict(exclude_unset=True).items():
+        setattr(pest, key, value)
+
+    db.commit()
+    db.refresh(pest)
+    return pest
+
+# =====================
+# Delete a pest alert
+# =====================
+@app.delete("/pest-alerts/{pest_id}")
+def delete_pest_alert(pest_id: int, db: Session = Depends(get_db)):
+    pest = db.query(models.PestAlert).filter(models.PestAlert.id == pest_id).first()
+    if not pest:
+        raise HTTPException(status_code=404, detail="Pest alert not found")
+    
+    db.delete(pest)
+    db.commit()
+    return {"detail": "Pest alert deleted successfully"}
+# =====================
+# Get all pest alerts
+# =====================
+@app.get("/pest-alerts", response_model=list[schemas.PestAlertOut])
+def get_all_pests(db: Session = Depends(get_db)):
+    pests = db.query(models.PestAlert).all()
+    return pests
+
+
 # Admin creates weather alert
 # ========================
 @app.post("/weather-alerts", response_model=schemas.WeatherAlertOut)
@@ -742,6 +842,7 @@ def create_weather_alert(alert: schemas.WeatherAlertCreate, db: Session = Depend
     db.commit()
     db.refresh(new_alert)
     return new_alert
+
 
 # ========================
 # Get all weather alerts
