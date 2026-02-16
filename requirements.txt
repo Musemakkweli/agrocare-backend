@@ -6,3 +6,4 @@ passlib[bcrypt]
 python-jose
 email-validator
 psycopg2-binary
+supabase
