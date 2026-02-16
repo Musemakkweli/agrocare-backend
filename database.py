@@ -1,23 +1,21 @@
-# database.py
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 
 # -------------------------
 # DATABASE URL
 # -------------------------
-# It's better to use environment variables for security
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres.jwdhnfdgkokpyvrgmtxd:c01rJFqtYpcy8JU7@aws-1-eu-west-3.pooler.supabase.com:6543/postgres"
-)
+# Use environment variable for security
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set")
 
 # -------------------------
 # SQLAlchemy Engine
 # -------------------------
 engine = create_engine(
     DATABASE_URL,
+    pool_pre_ping=True,  # avoids stale connections
     connect_args={"sslmode": "require"}  # Required for Supabase/PostgreSQL SSL
 )
 
