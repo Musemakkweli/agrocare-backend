@@ -17,7 +17,7 @@ import schemas
 import random
 from typing import Optional
 from dotenv import load_dotenv
-from models import Complaint, ComplaintStatus
+from models import AIChatHistory, Complaint, ComplaintStatus
 load_dotenv()  # load variables from .env
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -234,6 +234,24 @@ def farmer_profile(user_id: int, profile: schemas.FarmerProfile, db: Session = D
         role=user.role,
         is_approved=user.is_approved,
         is_profile_completed=user.is_profile_completed,  # ✅ include this
+        farm_location=user.farm_location,
+        crop_type=user.crop_type,
+        phone=user.phone
+    )
+# Add this GET endpoint to fetch farmer profile
+@app.get("/profile/farmer/{user_id}", response_model=schemas.FarmerProfileResponse)
+def get_farmer_profile(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return schemas.FarmerProfileResponse(
+        id=user.id,
+        full_name=user.full_name,
+        email=user.email,
+        role=user.role,
+        is_approved=user.is_approved,
+        is_profile_completed=user.is_profile_completed,
         farm_location=user.farm_location,
         crop_type=user.crop_type,
         phone=user.phone
@@ -961,3 +979,18 @@ def get_daily_activity(farmer_id: int, db: Session = Depends(get_db)):
         "message": "Daily activity fetched successfully",
         "data": result
     }
+
+# ----------------- CREATE CHAT HISTORY -----------------
+@app.post("/ai/chat", response_model=schemas.AIChatHistoryOut)
+def create_ai_chat(chat: schemas.AIChatHistoryCreate, db: Session = Depends(get_db)):
+    db_chat = models.AIChatHistory(**chat.dict())
+    db.add(db_chat)
+    db.commit()
+    db.refresh(db_chat)
+    return db_chat
+
+# ----------------- GET CHAT HISTORY FOR USER -----------------
+@app.get("/ai/chat/{user_id}", response_model=list[schemas.AIChatHistoryOut])
+def get_ai_chats(user_id: int, db: Session = Depends(get_db)):
+    chats = db.query(AIChatHistory).filter(AIChatHistory.user_id == user_id).order_by(AIChatHistory.created_at.desc()).all()
+    return chats

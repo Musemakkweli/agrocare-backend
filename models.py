@@ -27,6 +27,7 @@ class User(Base):
     email = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)  # Store hashed passwords in production
     role = Column(Enum(Role), nullable=False)
+    chat_history = relationship("AIChatHistory", back_populates="user")
     
     # ===== Profile completion & approval =====
     is_approved = Column(Boolean, default=False)   # Admin approves the user
@@ -146,4 +147,18 @@ class WeatherAlert(Base):
     severity = Column(String, nullable=True)  # optional: "Low", "Medium", "High"
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     created_by_admin_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # admin who created the alert
+
+
+class AIChatHistory(Base):
+    __tablename__ = "ai_chat_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))  # assuming you have a users table
+    user_message = Column(Text, nullable=True)
+    ai_response = Column(Text, nullable=True)
+    image_url = Column(String, nullable=True)  # store path or URL to uploaded image
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    # Relationship must be **inside the class**
+    user = relationship("User", back_populates="chat_history")
 

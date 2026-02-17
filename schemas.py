@@ -303,3 +303,20 @@ class APIResponse(BaseModel):
     success: bool
     message: str
     data: Any
+    
+class AIChatHistoryCreate(BaseModel):
+    user_id: int
+    user_message: str
+    ai_response: str
+    image_url: Optional[str] = None
+
+class AIChatHistoryOut(BaseModel):
+    id: int
+    user_id: int
+    user_message: str
+    ai_response: str
+    image_url: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
