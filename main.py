@@ -154,16 +154,19 @@ def register_user(user: schemas.UserRegister, db: Session = Depends(get_db)):
 
     return new_user
 
-
 # ======================
 # Login
 # ======================
 @app.post("/login", response_model=schemas.LoginResponseWithMessage)
 def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
-    db_user = db.query(models.User).filter(models.User.email == user.email).first()
-
+    # Check if input is email or phone
+    if "@" in user.identifier:  # It's an email
+        db_user = db.query(models.User).filter(models.User.email == user.identifier).first()
+    else:  # It's a phone number
+        db_user = db.query(models.User).filter(models.User.phone == user.identifier).first()
+    
     if not db_user or not verify_password(user.password, db_user.password):
-        raise HTTPException(400, "Invalid email or password")
+        raise HTTPException(400, "Invalid email/phone or password")
 
     if not db_user.is_approved:
         raise HTTPException(403, "User not approved yet")
@@ -176,7 +179,6 @@ def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
         "token_type": "bearer",
         "user": db_user
     }
-
 
 # ======================
 # Admin
