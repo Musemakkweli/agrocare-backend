@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr,  root_validator
+from pydantic import BaseModel, EmailStr, root_validator
 from typing import Any, Optional
 from datetime import datetime, date
 from models import ComplaintStatus
@@ -24,10 +24,10 @@ class UserResponse(BaseModel):
     id: int
     full_name: str
     email: EmailStr
-    phone: str | None  
+    phone: str | None
     role: str
     is_approved: bool
-    is_profile_completed: bool 
+    is_profile_completed: bool
 
     class Config:
         from_attributes = True
@@ -47,7 +47,7 @@ class FarmerProfileResponse(BaseModel):
     email: str
     role: str
     is_approved: bool
-    is_profile_completed: bool 
+    is_profile_completed: bool
     farm_location: Optional[str]
     crop_type: Optional[str]
     phone: Optional[str]
@@ -99,9 +99,14 @@ class FinanceProfile(BaseModel):
     class Config:
         from_attributes = True
 
+
 class UserLogin(BaseModel):
     identifier: str
     password: str
+
+
+class ChatRequest(BaseModel):
+    message: str
 
 
 # ===== TOKEN =====
@@ -223,14 +228,17 @@ class ComplaintOut(ComplaintBase):
     class Config:
         from_attributes = True
 
+
 class FieldBase(BaseModel):
     name: str
     area: Optional[float] = None
     crop_type: Optional[str] = None
     location: Optional[str] = None  # ✅ added location
 
+
 class FieldCreate(FieldBase):
     user_id: int  # corresponds to farmer_id in DB
+
 
 class FieldOut(FieldBase):
     id: int
@@ -238,7 +246,8 @@ class FieldOut(FieldBase):
 
     class Config:
         from_attributes = True
-    
+
+
 class HarvestBase(BaseModel):
     farmer_id: int
     field_id: int
@@ -246,9 +255,11 @@ class HarvestBase(BaseModel):
     harvest_date: date
     status: Optional[str] = "upcoming"
 
+
 # Schema for creating a new harvest
 class HarvestCreate(HarvestBase):
     pass
+
 
 # Schema for reading/output
 class HarvestOut(HarvestBase):
@@ -257,6 +268,7 @@ class HarvestOut(HarvestBase):
     class Config:
         from_attributes = True 
 
+
 class PestAlertBase(BaseModel):
     farmer_id: int
     field_id: int
@@ -264,8 +276,10 @@ class PestAlertBase(BaseModel):
     severity: Optional[str] = None
     description: Optional[str] = None
 
+
 class PestAlertCreate(PestAlertBase):
     pass
+
 
 class PestAlertOut(PestAlertBase):
     id: int
@@ -274,6 +288,7 @@ class PestAlertOut(PestAlertBase):
     class Config:
         from_attributes = True
 
+
 # Base schema
 class WeatherAlertBase(BaseModel):
     region: str
@@ -281,9 +296,11 @@ class WeatherAlertBase(BaseModel):
     message: str
     severity: Optional[str] = None
 
+
 # For creating new alert (admin input)
 class WeatherAlertCreate(WeatherAlertBase):
     created_by_admin_id: int  # admin ID
+
 
 # For output/response
 class WeatherAlertOut(WeatherAlertBase):
@@ -294,21 +311,26 @@ class WeatherAlertOut(WeatherAlertBase):
     class Config:
         from_attributes = True
 
+
 class UserRoleUpdate(BaseModel):
     role: str  # "admin", "farmer", "leader", "donor", etc.
 
     class Config:
         from_attributes = True
+
+
 class APIResponse(BaseModel):
     success: bool
     message: str
     data: Any
     
+
 class AIChatHistoryCreate(BaseModel):
     user_id: int
     user_message: str
     ai_response: str
     image_url: Optional[str] = None
+
 
 class AIChatHistoryOut(BaseModel):
     id: int

@@ -1,8 +1,9 @@
-from sqlalchemy import Column, Integer, String, Boolean, Enum, Float, ForeignKey, Date, DateTime,  Text, JSON,func, TIMESTAMP
+from sqlalchemy import Column, Integer, String, Boolean, Enum, Float, ForeignKey, Date, DateTime, Text, JSON, func, TIMESTAMP
 from sqlalchemy.orm import relationship
 from database import Base
 import datetime
 import enum
+
 
 # ===== ENUMS =====
 class Role(str, enum.Enum):
@@ -13,9 +14,11 @@ class Role(str, enum.Enum):
     finance = "finance"
     admin = "admin"
 
+
 class DonorType(str, enum.Enum):
     person = "person"
     organization = "organization"
+
 
 # ===== USER MODEL =====
 class User(Base):
@@ -53,13 +56,13 @@ class Program(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
-    location = Column(String(255), nullable=False)  # <-- necessary
+    location = Column(String(255), nullable=False)
     district = Column(String(255), nullable=False)
     goal = Column(Float, default=0)
     raised = Column(Float, default=0)
     status = Column(String(100))
 
-    
+
 
 class Donation(Base):
     __tablename__ = "donations"
@@ -69,9 +72,10 @@ class Donation(Base):
     donor_name = Column(String, nullable=False)
     amount = Column(Float, nullable=False)
     payment_method = Column(String, nullable=False)
-    card_info = Column(JSON, nullable=True)        # For Visa/Mastercard
-    mobile_number = Column(String, nullable=True)  # For MTN/Airtel
-    bank_details = Column(JSON, nullable=True)     # For Bank transfers
+    card_info = Column(JSON, nullable=True)
+    mobile_number = Column(String, nullable=True)
+    bank_details = Column(JSON, nullable=True)
+
 
 class Field(Base):
     __tablename__ = "fields"
@@ -81,8 +85,10 @@ class Field(Base):
     name = Column(String, nullable=False)
     area = Column(Float, nullable=True)
     crop_type = Column(String, nullable=True)
-    location = Column(String, nullable=True) 
+    location = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+
+
 class Harvest(Base):
     __tablename__ = "harvests"
 
@@ -91,23 +97,22 @@ class Harvest(Base):
     field_id = Column(Integer, ForeignKey("fields.id"), nullable=False)
     crop_type = Column(String, nullable=True)
     harvest_date = Column(Date, nullable=False)
-    status = Column(String, default="upcoming")  # upcoming, completed, canceled
+    status = Column(String, default="upcoming")
     created_at = Column(DateTime, server_default=func.now())
 
-    # Optional: relationship for easier joins
     field = relationship("Field", backref="harvests")
-  # upcoming, completed
+
+
 class PestAlert(Base):
     __tablename__ = "pest_alerts"
 
     id = Column(Integer, primary_key=True, index=True)
     farmer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    field_id = Column(Integer, ForeignKey("fields.id"), nullable=False)  # which field the pest alert is for
-    pest_type = Column(String, nullable=False)  # e.g., locust, aphids
-    severity = Column(String, nullable=True)    # optional: low, medium, high
-    description = Column(String, nullable=True) # detailed message
+    field_id = Column(Integer, ForeignKey("fields.id"), nullable=False)
+    pest_type = Column(String, nullable=False)
+    severity = Column(String, nullable=True)
+    description = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
-
 
 
 class ComplaintStatus(str, enum.Enum):
@@ -137,28 +142,27 @@ class Complaint(Base):
 
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
 
+
 class WeatherAlert(Base):
     __tablename__ = "weather_alerts"
 
     id = Column(Integer, primary_key=True, index=True)
-    region = Column(String, nullable=False)  # e.g., "Huye District" or field-specific
-    alert_type = Column(String, nullable=False)  # e.g., "Rain", "Frost", "Drought"
-    message = Column(String, nullable=False)  # detailed message
-    severity = Column(String, nullable=True)  # optional: "Low", "Medium", "High"
+    region = Column(String, nullable=False)
+    alert_type = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    severity = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    created_by_admin_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # admin who created the alert
+    created_by_admin_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
 
 class AIChatHistory(Base):
     __tablename__ = "ai_chat_history"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))  # assuming you have a users table
+    user_id = Column(Integer, ForeignKey("users.id"))
     user_message = Column(Text, nullable=True)
     ai_response = Column(Text, nullable=True)
-    image_url = Column(String, nullable=True)  # store path or URL to uploaded image
+    image_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    # Relationship must be **inside the class**
     user = relationship("User", back_populates="chat_history")
-
