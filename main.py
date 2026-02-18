@@ -1132,3 +1132,426 @@ async def ai_chat(req: schemas.ChatRequest, request: Request):
 def get_ai_chats(user_id: int, db: Session = Depends(get_db)):
     chats = db.query(AIChatHistory).filter(AIChatHistory.user_id == user_id).order_by(AIChatHistory.created_at.desc()).all()
     return chats
+@app.on_event("startup")
+async def warmup_ai():
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(
+                "http://localhost:8000/ai-chat",
+                json={"message": "warmup"}
+            )
+    except:
+        pass
+
+# ======================
+# Public Complaint (No Login Required)
+# ======================
+@app.post("/public-complaint", response_model=schemas.PublicComplaintOut)
+def create_public_complaint(
+    name: str = Form(...),
+    phone: str = Form(...),
+    email: Optional[str] = Form(None),
+    title: str = Form(...),
+    type: str = Form(...),
+    description: str = Form(...),
+    location: str = Form(...),
+    urgent: bool = Form(False),
+    image: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    image_url = None
+    
+    # Upload image to Supabase if provided
+    if image:
+        # Create unique filename
+        filename = f"public_complaint_{int(time.time())}_{image.filename}"
+        content = image.file.read()
+        
+        try:
+            # Upload to Supabase
+            supabase.storage.from_(BUCKET_NAME).upload(filename, content)
+            # Get public URL
+            image_url = supabase.storage.from_(BUCKET_NAME).get_public_url(filename)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Supabase upload failed: {str(e)}")
+
+    # Create complaint in database
+    complaint = models.PublicComplaint(
+        name=name,
+        phone=phone,
+        email=email,
+        title=title,
+        type=type,
+        description=description,
+        location=location,
+        urgent=urgent,
+        image=image_url,
+        status=models.ComplaintStatus.Pending  # Reuse your existing enum
+    )
+
+    db.add(complaint)
+    db.commit()
+    db.refresh(complaint)
+    
+    return complaint
+
+# ======================
+# Get Public Complaint by ID
+# ======================
+@app.get("/public-complaint/{complaint_id}", response_model=schemas.PublicComplaintOut)
+def get_public_complaint_comlaintid(
+    complaint_id: int,
+    db: Session = Depends(get_db)
+):
+    complaint = db.query(models.PublicComplaint).filter(models.PublicComplaint.id == complaint_id).first()
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+    return complaint
+
+# ======================
+# Get All Public Complaints (with filters)
+# ======================
+@app.get("/public-complaints", response_model=List[schemas.PublicComplaintOut])
+def get_public_complaints_filter(
+    skip: int = 0,
+    limit: int = 100,
+    type: Optional[str] = None,
+    urgent: Optional[bool] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.PublicComplaint)
+    
+    if type:
+        query = query.filter(models.PublicComplaint.type == type)
+    if urgent is not None:
+        query = query.filter(models.PublicComplaint.urgent == urgent)
+    
+    complaints = query.order_by(models.PublicComplaint.created_at.desc()).offset(skip).limit(limit).all()
+    return complaints
+
+    # ======================
+# Get All Public Complaints (with filters)
+# ======================
+@app.get("/public-complaints", response_model=List[schemas.PublicComplaintOut])
+def get_ALL_public_complaints(
+    skip: int = 0,
+    limit: int = 100,
+    type: Optional[str] = None,
+    status: Optional[str] = None,
+    urgent: Optional[bool] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db)
+    # Add admin authentication here if needed
+):
+    """
+    Get all public complaints with optional filters.
+    
+    - skip: Number of records to skip (pagination)
+    - limit: Maximum number of records to return
+    - type: Filter by complaint type (e.g., crop_disease, pest_infestation)
+    - status: Filter by status (pending, reviewed, resolved)
+    - urgent: Filter by urgent flag (true/false)
+    - start_date: Filter by created date (YYYY-MM-DD)
+    - end_date: Filter by created date (YYYY-MM-DD)
+    - search: Search in title, description, name, phone, location
+    """
+    query = db.query(models.PublicComplaint)
+    
+    # Apply filters
+    if type:
+        query = query.filter(models.PublicComplaint.type == type)
+    
+    if status:
+        query = query.filter(models.PublicComplaint.status == status)
+    
+    if urgent is not None:
+        query = query.filter(models.PublicComplaint.urgent == urgent)
+    
+    if start_date:
+        query = query.filter(models.PublicComplaint.created_at >= start_date)
+    
+    if end_date:
+        query = query.filter(models.PublicComplaint.created_at <= end_date)
+    
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            db.or_(
+                models.PublicComplaint.title.ilike(search_term),
+                models.PublicComplaint.description.ilike(search_term),
+                models.PublicComplaint.name.ilike(search_term),
+                models.PublicComplaint.phone.ilike(search_term),
+                models.PublicComplaint.location.ilike(search_term)
+            )
+        )
+    
+    # Order by most recent first
+    query = query.order_by(models.PublicComplaint.created_at.desc())
+    
+    # Apply pagination
+    complaints = query.offset(skip).limit(limit).all()
+    
+    return complaints
+# ======================
+# Get User Profile
+# ======================
+@app.get("/users/profile/{user_id}", response_model=schemas.UserProfileResponse)
+def get_user_profile(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get user profile by ID
+    """
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Base profile data
+    profile_data = {
+        "id": user.id,
+        "fullname": user.full_name,
+        "email": user.email,
+        "phone": user.phone,
+        "role": user.role.value if user.role else None,
+        "is_approved": user.is_approved,
+        "is_profile_completed": user.is_profile_completed,
+    }
+    
+    # Add role-specific fields
+    if user.role == models.Role.farmer:
+        profile_data.update({
+            "farm_location": user.farm_location,
+            "crop_type": user.crop_type,
+            "district": user.district,
+        })
+    
+    elif user.role == models.Role.agronomist:
+        profile_data.update({
+            "expertise": user.expertise,
+            "license": user.license,
+        })
+    
+    elif user.role == models.Role.donor:
+        profile_data.update({
+            "org_name": user.org_name,
+            "funding": user.funding,
+            "donor_type": user.donor_type.value if user.donor_type else None,
+        })
+    
+    elif user.role == models.Role.leader:
+        profile_data.update({
+            "leader_title": user.leader_title,
+            "district": user.district,
+        })
+    
+    elif user.role == models.Role.finance:
+        profile_data.update({
+            "department": user.department,
+        })
+    
+    elif user.role == models.Role.admin:
+        profile_data.update({
+            # Add admin-specific fields if any
+        })
+    
+    return profile_data
+
+
+# ======================
+# Update User Profile
+# ======================
+@app.put("/users/profile/{user_id}", response_model=schemas.ProfileUpdateResponse)
+def update_user_profile(
+    user_id: int,
+    profile_data: schemas.ProfileUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Update user profile information
+    """
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Update common fields
+    if profile_data.fullname is not None:
+        user.full_name = profile_data.fullname
+    if profile_data.phone is not None:
+        user.phone = profile_data.phone
+    
+    # Update role-specific fields based on user role
+    if user.role == models.Role.farmer:
+        if profile_data.farm_location is not None:
+            user.farm_location = profile_data.farm_location
+        if profile_data.crop_type is not None:
+            user.crop_type = profile_data.crop_type
+        if profile_data.district is not None:
+            user.district = profile_data.district
+    
+    elif user.role == models.Role.agronomist:
+        if profile_data.expertise is not None:
+            user.expertise = profile_data.expertise
+        if profile_data.license is not None:
+            user.license = profile_data.license
+    
+    elif user.role == models.Role.donor:
+        if profile_data.org_name is not None:
+            user.org_name = profile_data.org_name
+        if profile_data.funding is not None:
+            user.funding = profile_data.funding
+        if profile_data.donor_type is not None:
+            user.donor_type = profile_data.donor_type
+    
+    elif user.role == models.Role.leader:
+        if profile_data.leader_title is not None:
+            user.leader_title = profile_data.leader_title
+        if profile_data.district is not None:
+            user.district = profile_data.district
+    
+    elif user.role == models.Role.finance:
+        if profile_data.department is not None:
+            user.department = profile_data.department
+    
+    # Mark profile as completed if all required fields are filled
+    if not user.is_profile_completed:
+        if user.role == models.Role.farmer:
+            if user.farm_location and user.crop_type and user.phone:
+                user.is_profile_completed = True
+        elif user.role == models.Role.agronomist:
+            if user.expertise and user.license and user.phone:
+                user.is_profile_completed = True
+        elif user.role == models.Role.donor:
+            if user.org_name and user.funding and user.phone:
+                user.is_profile_completed = True
+        elif user.role == models.Role.leader:
+            if user.leader_title and user.district and user.phone:
+                user.is_profile_completed = True
+        elif user.role == models.Role.finance:
+            if user.department and user.phone:
+                user.is_profile_completed = True
+    
+    db.commit()
+    
+    return {
+        "message": "Profile updated successfully",
+        "is_profile_completed": user.is_profile_completed
+    }
+
+
+# ======================
+# Upload Profile Picture
+# ======================
+BUCKET_NAME = os.getenv("BUCKET_NAME", "images")
+
+@app.post("/users/{user_id}/profile-picture")
+async def upload_profile_picture(
+    user_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload profile picture to Supabase storage
+    """
+    # Validate file type
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    
+    # Validate file size (max 5MB)
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    
+    if file_size > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+    
+    # Get user from database
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    try:
+        import uuid
+        import os
+        
+        # Read file content
+        content = await file.read()
+        
+        # Generate unique filename
+        file_extension = os.path.splitext(file.filename)[1]
+        filename = f"profile_{user_id}_{uuid.uuid4()}{file_extension}"
+        
+        # Upload to Supabase
+        supabase.storage.from_(BUCKET_NAME).upload(filename, content)
+        
+        # Get public URL
+        image_url = supabase.storage.from_(BUCKET_NAME).get_public_url(filename)
+        
+        # You need to add profile_picture column to your User model first
+        # user.profile_picture = image_url
+        # db.commit()
+        
+        return {
+            "message": "Profile picture uploaded successfully",
+            "imageUrl": image_url
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Supabase upload failed: {str(e)}")
+
+
+# ======================
+# Get User Statistics
+# ======================
+@app.get("/users/{user_id}/stats")
+def get_user_statistics(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get user statistics based on role
+    """
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    stats = {
+        "total_complaints": 0,
+        "pending_complaints": 0,
+        "resolved_complaints": 0,
+    }
+    
+    # Get complaint statistics
+    complaints = db.query(models.Complaint).filter(models.Complaint.created_by == user_id).all()
+    stats["total_complaints"] = len(complaints)
+    stats["pending_complaints"] = len([c for c in complaints if c.status == models.ComplaintStatus.Pending])
+    stats["resolved_complaints"] = len([c for c in complaints if c.status == models.ComplaintStatus.Resolved])
+    
+    # Role-specific statistics
+    if user.role == models.Role.farmer:
+        fields = db.query(models.Field).filter(models.Field.farmer_id == user_id).all()
+        harvests = db.query(models.Harvest).filter(models.Harvest.farmer_id == user_id).all()
+        pest_alerts = db.query(models.PestAlert).filter(models.PestAlert.farmer_id == user_id).all()
+        
+        stats.update({
+            "total_fields": len(fields),
+            "total_harvests": len(harvests),
+            "upcoming_harvests": len([h for h in harvests if h.status == "upcoming"]),
+            "total_pest_alerts": len(pest_alerts),
+            "critical_pests": len([p for p in pest_alerts if p.severity == "critical"]),
+        })
+    
+    elif user.role == models.Role.donor:
+        donations = db.query(models.Donation).filter(models.Donation.donor_name == user.full_name).all()
+        stats.update({
+            "total_donations": len(donations),
+            "total_amount": sum([d.amount for d in donations]),
+        })
+    
+    return stats

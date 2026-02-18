@@ -31,6 +31,8 @@ class User(Base):
     password = Column(String, nullable=False)  # Store hashed passwords in production
     role = Column(Enum(Role), nullable=False)
     chat_history = relationship("AIChatHistory", back_populates="user")
+      # ===== Profile picture =====
+    profile_picture = Column(String, nullable=True)
     
     # ===== Profile completion & approval =====
     is_approved = Column(Boolean, default=False)   # Admin approves the user
@@ -166,3 +168,24 @@ class AIChatHistory(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     user = relationship("User", back_populates="chat_history")
+
+class PublicComplaint(Base):
+    __tablename__ = "public_complaints"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    phone = Column(String(20), nullable=False)
+    email = Column(String(100), nullable=True)
+    title = Column(String(200), nullable=False)
+    type = Column(String(50), nullable=False)
+    description = Column(Text, nullable=False)
+    location = Column(String(200), nullable=False)
+    image = Column(String(500), nullable=True)  # Supabase URL
+    urgent = Column(Boolean, default=False)
+    status = Column(Enum(ComplaintStatus), default=ComplaintStatus.Pending)
+    
+    # Tracking
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    def __repr__(self):
+        return f"<PublicComplaint {self.id} - {self.name}>"

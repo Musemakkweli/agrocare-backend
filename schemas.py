@@ -342,3 +342,79 @@ class AIChatHistoryOut(BaseModel):
 
     class Config:
         from_attributes = True
+# Public Complaint Schemas
+class PublicComplaintBase(BaseModel):
+    name: str
+    phone: str
+    email: Optional[str] = None
+    title: str
+    type: str
+    description: str
+    location: str
+    urgent: bool = False
+
+class PublicComplaintCreate(PublicComplaintBase):
+    pass
+
+class PublicComplaintOut(PublicComplaintBase):
+    id: int
+    image: Optional[str] = None
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+# Add to your schemas.py
+
+class ProfileUpdate(BaseModel):
+    # Common fields
+    fullname: Optional[str] = None
+    phone: Optional[str] = None
+    
+    # Farmer fields
+    farm_location: Optional[str] = None
+    crop_type: Optional[str] = None
+    district: Optional[str] = None
+    
+    # Agronomist fields
+    expertise: Optional[str] = None
+    license: Optional[str] = None
+    
+    # Donor fields
+    org_name: Optional[str] = None
+    funding: Optional[str] = None
+    donor_type: Optional[str] = None
+    
+    # Leader fields
+    leader_title: Optional[str] = None
+    
+    # Finance fields
+    department: Optional[str] = None
+
+class ProfileUpdateResponse(BaseModel):
+    message: str
+    is_profile_completed: bool
+
+class UserProfileResponse(BaseModel):
+    id: int
+    fullname: str
+    email: str
+    phone: Optional[str] = None
+    role: str
+    is_approved: bool
+    is_profile_completed: bool
+    
+    # Optional role-specific fields
+    farm_location: Optional[str] = None
+    crop_type: Optional[str] = None
+    district: Optional[str] = None
+    expertise: Optional[str] = None
+    license: Optional[str] = None
+    org_name: Optional[str] = None
+    funding: Optional[str] = None
+    donor_type: Optional[str] = None
+    leader_title: Optional[str] = None
+    department: Optional[str] = None
+
+    class Config:
+        from_attributes = True
