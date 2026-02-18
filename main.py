@@ -1,7 +1,7 @@
 from random import random
 import os
 import time
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File,Form,Path
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File,Form,Path, Request
 from supabase import create_client, Client
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer
@@ -986,8 +986,9 @@ def get_daily_activity(farmer_id: int, db: Session = Depends(get_db)):
 # AI chat (Deepseek)
 # ======================
 @app.post("/ai-chat")
-async def ai_chat(req: schemas.ChatRequest, model: Optional[str] = None):
+async def ai_chat(req: schemas.ChatRequest, request: Request):
     message = req.message
+    model = request.query_params.get("model")
     if not message:
         raise HTTPException(status_code=400, detail="Missing 'message' in request body. Send JSON like {'message':'hi'}")
 
