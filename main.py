@@ -55,8 +55,9 @@ SECRET_KEY = "supersecretkey123"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-# CryptContext with truncate_error=True automatically handles bcrypt's 72-byte limit
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", truncate_error=True)
+# CryptContext with argon2 as primary, but bcrypt for backward compatibility with existing hashes
+# New passwords use argon2, existing bcrypt hashes can still be verified
+pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="bcrypt")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 if __name__ == "__main__":

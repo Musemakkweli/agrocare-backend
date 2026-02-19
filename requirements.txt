@@ -2,7 +2,7 @@ fastapi
 uvicorn
 sqlalchemy
 pymysql
-passlib[bcrypt]
+passlib[argon2]
 python-jose
 email-validator
 psycopg2-binary
@@ -10,15 +10,4 @@ supabase
 python-dotenv
 python-multipart
 httpx
-fastapi
-uvicorn
-sqlalchemy
-pymysql
-passlib[bcrypt]
-python-jose
-email-validator
-psycopg2-binary
-supabase
-python-dotenv
-python-multipart
-httpx
+
