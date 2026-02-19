@@ -1,6 +1,7 @@
 from random import random
 import os
 import time
+from fastapi.responses import JSONResponse   
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File,Form,Path, Request
 from supabase import create_client, Client
 from sqlalchemy.orm import Session
@@ -1617,3 +1618,190 @@ def get_all_supports(db: Session = Depends(get_db)):
         "data": supports
     }
 
+# ======================
+# Active Complaints Count (All)
+# ======================
+@app.get("/admin/complaints/active")
+def get_active_complaints(db: Session = Depends(get_db)):
+
+    user_complaints = db.query(models.Complaint).filter(
+        models.Complaint.status != models.ComplaintStatus.Resolved
+    ).count()
+
+    public_complaints = db.query(models.PublicComplaint).filter(
+        models.PublicComplaint.status != models.ComplaintStatus.Resolved
+    ).count()
+
+    total_active = user_complaints + public_complaints
+
+    return {
+        "active_complaints": total_active,
+        "user_complaints_active": user_complaints,
+        "public_complaints_active": public_complaints
+    }
+# ======================
+# Total Users Count
+# ======================
+@app.get("/admin/users/total")
+def get_total_users(db: Session = Depends(get_db)):
+
+    total_users = db.query(models.User).count()
+
+    return {
+        "total_users": total_users
+    }
+# ======================
+# Complaint Resolution Rate
+# ======================
+@app.get("/admin/complaints/resolution-rate")
+def get_resolution_rate(db: Session = Depends(get_db)):
+
+    # Total complaints
+    total_user = db.query(models.Complaint).count()
+    total_public = db.query(models.PublicComplaint).count()
+    total_complaints = total_user + total_public
+
+    # Resolved complaints
+    resolved_user = db.query(models.Complaint).filter(
+        models.Complaint.status == models.ComplaintStatus.Resolved
+    ).count()
+
+    resolved_public = db.query(models.PublicComplaint).filter(
+        models.PublicComplaint.status == models.ComplaintStatus.Resolved
+    ).count()
+
+    total_resolved = resolved_user + resolved_public
+
+    # Avoid division by zero
+    if total_complaints == 0:
+        resolution_rate = 0
+    else:
+        resolution_rate = round((total_resolved / total_complaints) * 100, 2)
+
+    return {
+        "resolution_rate": resolution_rate,
+        "total_complaints": total_complaints,
+        "resolved_complaints": total_resolved
+    }
+# ======================
+# Admin Update Complaint Status
+# ======================
+@app.put("/admin/complaints/{complaint_id}/status")
+def update_complaint_status(
+    complaint_id: int,
+    status: models.ComplaintStatus,
+    is_public: bool = False,
+    db: Session = Depends(get_db)
+):
+
+    if is_public:
+        complaint = db.query(models.PublicComplaint).filter(
+            models.PublicComplaint.id == complaint_id
+        ).first()
+    else:
+        complaint = db.query(models.Complaint).filter(
+            models.Complaint.id == complaint_id
+        ).first()
+
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    complaint.status = status
+
+    db.commit()
+    db.refresh(complaint)
+
+    return {
+        "message": "Complaint status updated successfully",
+        "complaint_id": complaint.id,
+        "new_status": complaint.status
+    }
+from sqlalchemy import func
+
+# ======================
+# Total Donation Amount
+# ======================
+@app.get("/admin/donations/total-amount")
+def get_total_donation_amount(db: Session = Depends(get_db)):
+
+    total_amount = db.query(
+        func.coalesce(func.sum(models.Donation.amount), 0)
+    ).scalar()
+
+    return {
+        "total_amount": float(total_amount)
+    }
+from sqlalchemy import func, case
+from datetime import datetime, timedelta
+
+@app.get("/admin/complaints/trend/daily")
+def daily_complaints_trend(days: int = 30, db: Session = Depends(get_db)):
+    start_date = datetime.utcnow() - timedelta(days=days)
+
+    complaints = (
+        db.query(
+            func.date(models.Complaint.created_at).label("date"),
+            func.count(models.Complaint.id).label("complaints"),
+            func.sum(
+                case(
+                    (models.Complaint.status == models.ComplaintStatus.Resolved, 1),
+                    else_=0
+                )
+            ).label("resolved")
+        )
+        .filter(models.Complaint.created_at >= start_date)
+        .group_by(func.date(models.Complaint.created_at))
+        .order_by(func.date(models.Complaint.created_at))
+        .all()
+    )
+
+    trend = [
+        {"date": str(c.date), "complaints": c.complaints, "resolved": c.resolved}
+        for c in complaints
+    ]
+
+    return trend
+
+
+# ======================
+# Complaint Status Endpoint
+# ======================
+@app.get("/admin/complaints/status", response_model=List[schemas.ComplaintStatusOut])
+def complaint_status(db: Session = Depends(get_db)):
+
+    # Query user complaints
+    user_counts = (
+        db.query(models.Complaint.status, func.count(models.Complaint.id))
+        .group_by(models.Complaint.status)
+        .all()
+    )
+
+    # Query public complaints
+    public_counts = (
+        db.query(models.PublicComplaint.status, func.count(models.PublicComplaint.id))
+        .group_by(models.PublicComplaint.status)
+        .all()
+    )
+
+    # Combine counts
+    combined = {}
+    for status, count in user_counts + public_counts:
+        combined[status] = combined.get(status, 0) + count
+
+    # Map to frontend format with colors
+    color_map = {
+        "Resolved": "#16A34A",
+        "Pending": "#B45309",
+        "InProgress": "#CA8A04"
+    }
+
+    result = [
+        {
+            "name": status,
+            "value": combined[status],
+            "color": color_map.get(status, "#6B7280")  # default gray if missing
+        }
+        for status in combined
+    ]
+
+    return JSONResponse(content=result)

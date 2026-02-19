@@ -562,3 +562,8 @@ class RecentRequest(BaseModel):
 class SupportStatsResponse(BaseModel):
     success: bool
     data: dict
+
+class ComplaintStatusOut(BaseModel):
+    name: str
+    value: int
+    color: str
