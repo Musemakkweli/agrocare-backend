@@ -69,22 +69,9 @@ if __name__ == "__main__":
 # ======================
 # Password Helpers
 # ======================
-def hash_password(password: str):
-    # bcrypt has a maximum input of 72 bytes. Validate and return a clear error
-    # so callers (HTTP endpoints) can return a proper 400 instead of a 500.
-    if isinstance(password, str):
-        b = password.encode("utf-8")
-    else:
-        b = bytes(password)
+# Note: Updated password functions are defined below (around line 160) with proper encoding handling
 
-    if len(b) > 72:
-        raise HTTPException(status_code=400, detail="Password too long; maximum is 72 bytes")
-
-    return pwd_context.hash(password)
-
-
-def verify_password(plain, hashed):
-    return pwd_context.verify(plain, hashed)
+# Old implementations removed to prevent conflicts
 
 
 # ======================
@@ -145,12 +132,34 @@ def root():
 MAX_BCRYPT_LENGTH = 72  # bcrypt limit
 
 def hash_password(password: str) -> str:
-    truncated = password[:MAX_BCRYPT_LENGTH]
-    return pwd_context.hash(truncated)
+    # Handle encoding properly for bcrypt 72-byte limit
+    if isinstance(password, str):
+        password_bytes = password.encode('utf-8')
+    else:
+        password_bytes = bytes(password)
+    
+    # Truncate to 72 bytes if needed
+    if len(password_bytes) > 72:
+        truncated_password = password_bytes[:72].decode('utf-8', errors='ignore')
+    else:
+        truncated_password = password
+    
+    return pwd_context.hash(truncated_password)
 
 def verify_password(plain: str, hashed: str) -> bool:
-    truncated = plain[:MAX_BCRYPT_LENGTH]
-    return pwd_context.verify(truncated, hashed)
+    # Handle encoding properly for bcrypt 72-byte limit
+    if isinstance(plain, str):
+        plain_bytes = plain.encode('utf-8')
+    else:
+        plain_bytes = bytes(plain)
+    
+    # Truncate to 72 bytes if needed  
+    if len(plain_bytes) > 72:
+        truncated_plain = plain_bytes[:72].decode('utf-8', errors='ignore')
+    else:
+        truncated_plain = plain
+    
+    return pwd_context.verify(truncated_plain, hashed)
 
 
 # ======================
