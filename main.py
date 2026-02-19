@@ -139,6 +139,19 @@ def get_current_user(
 def root():
     return {"message": "AgroCare Backend running 🚀"}
 
+# ======================
+# Password utilities
+# ======================
+MAX_BCRYPT_LENGTH = 72  # bcrypt limit
+
+def hash_password(password: str) -> str:
+    truncated = password[:MAX_BCRYPT_LENGTH]
+    return pwd_context.hash(truncated)
+
+def verify_password(plain: str, hashed: str) -> bool:
+    truncated = plain[:MAX_BCRYPT_LENGTH]
+    return pwd_context.verify(truncated, hashed)
+
 
 # ======================
 # Register
@@ -147,7 +160,6 @@ def root():
 def register_user(user: schemas.UserRegister, db: Session = Depends(get_db)):
 
     existing = db.query(models.User).filter(models.User.email == user.email).first()
-
     if existing:
         raise HTTPException(400, "Email already registered")
 
@@ -155,7 +167,7 @@ def register_user(user: schemas.UserRegister, db: Session = Depends(get_db)):
         full_name=user.full_name,
         email=user.email,
         phone=user.phone,
-        password=hash_password(user.password),
+        password=hash_password(user.password),  # truncated here
         role=user.role,
         is_approved=False
     )
@@ -165,7 +177,6 @@ def register_user(user: schemas.UserRegister, db: Session = Depends(get_db)):
     db.refresh(new_user)
 
     return new_user
-
 
 
 # ======================
@@ -181,7 +192,7 @@ def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
         )
     ).first()
 
-    if not db_user or not verify_password(user.password, db_user.password):
+    if not db_user or not verify_password(user.password, db_user.password):  # truncated here
         raise HTTPException(400, "Invalid email or phone or password")
 
     if not db_user.is_approved:
@@ -199,8 +210,8 @@ def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
 
         # ✅ send profile status
         "is_profile_completed": db_user.is_profile_completed
-
     }
+
 
 # ======================
 # Helper function
