@@ -1,0 +1,14 @@
+[33m2f69b0a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{0}: reset: moving to origin/main
+[33m58c67d3[m HEAD@{1}: commit: created ai-chat assistant , profile endpoint (without secrets)
+[33mebdc61b[m HEAD@{2}: reset: moving to HEAD~1
+[33mc9e3e53[m HEAD@{3}: commit: remove files containing secret
+[33mebdc61b[m HEAD@{4}: commit: created ai-chat assistant , profile enpoint
+[33m2f69b0a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{5}: pull: Fast-forward
+[33m84d3c95[m HEAD@{6}: commit: no changsv
+[33m4e711ae[m HEAD@{7}: pull: Fast-forward
+[33m90e664b[m HEAD@{8}: commit: Add AI backend and update Python files
+[33mbb64a5e[m HEAD@{9}: commit: add missing dependencies
+[33m949a868[m HEAD@{10}: commit: updated databse and env
+[33m2883b28[m HEAD@{11}: commit: fixed db connection
+[33m94c6f42[m HEAD@{12}: commit: Add python-dotenv for Render deployment
+[33m4dee5c4[m HEAD@{13}: commit: Update requirements.txt with supabase

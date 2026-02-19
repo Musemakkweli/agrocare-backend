@@ -1295,6 +1295,7 @@ def get_ALL_public_complaints(
     complaints = query.offset(skip).limit(limit).all()
     
     return complaints
+
 # ======================
 # Get User Profile
 # ======================
@@ -1555,3 +1556,59 @@ def get_user_statistics(
         })
     
     return stats
+
+@app.post("/api/support", response_model=schemas.SupportRequestOut)
+def create_support_request(
+    payload: schemas.SupportRequestCreate,
+    db: Session = Depends(get_db)
+):
+    data = payload.model_dump()
+
+    # Default donor to name
+    if not data.get("donor"):
+        data["donor"] = data["name"]
+
+    new_request = models.SupportRequest(**data)
+
+    db.add(new_request)
+    db.commit()
+    db.refresh(new_request)
+
+    return new_request
+@app.get("/api/support/{request_id}", response_model=schemas.SingleSupportResponse)
+def get_support_request(
+    request_id: int,
+    db: Session = Depends(get_db)
+):
+    request = db.query(models.SupportRequest)\
+        .filter(models.SupportRequest.id == request_id)\
+        .first()
+
+    if not request:
+        raise HTTPException(status_code=404, detail="Support request not found")
+
+    return {
+        "success": True,
+        "data": request
+    }
+# ==============================
+# GET ALL SUPPORT REQUESTS (no filters)
+# ==============================
+
+@app.get("/api/support", response_model=schemas.PaginatedSupportResponse)
+def get_all_supports(db: Session = Depends(get_db)):
+    supports = db.query(models.SupportRequest)\
+                 .order_by(models.SupportRequest.created_at.desc())\
+                 .all()
+
+    total = len(supports)
+
+    return {
+        "success": True,
+        "count": total,
+        "total": total,
+        "page": 1,
+        "pages": 1,
+        "data": supports
+    }
+

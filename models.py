@@ -189,3 +189,38 @@ class PublicComplaint(Base):
     
     def __repr__(self):
         return f"<PublicComplaint {self.id} - {self.name}>"
+    
+# Add these enums with your other enums
+class SupportCategory(str, enum.Enum):
+    tools = "tools"
+    fertilizer = "fertilizer"
+    seeds = "seeds"
+    irrigation = "irrigation"
+    other = "other"
+
+class SupportStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+# Add this model with your other models
+class SupportRequest(Base):
+    __tablename__ = "support_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    donor = Column(String(100), nullable=False)
+    amount = Column(Float, nullable=False)
+    message = Column(Text, nullable=False)
+    name = Column(String(100), nullable=False)
+    contact = Column(String(100), nullable=False)
+    category = Column(Enum(SupportCategory), nullable=False, default=SupportCategory.other)
+    status = Column(Enum(SupportStatus), nullable=False, default=SupportStatus.pending)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Optional: if user is logged in
+    
+    # Tracking
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<SupportRequest {self.id} - {self.title}>"

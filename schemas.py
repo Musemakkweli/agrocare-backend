@@ -1,7 +1,10 @@
-from pydantic import BaseModel, EmailStr, root_validator
-from typing import Any, Optional
+from pydantic import BaseModel, EmailStr, root_validator,Field, field_validator
+from typing import Any, Optional, List
 from datetime import datetime, date
 from models import ComplaintStatus
+from datetime import datetime
+from enum import Enum   # ✅ ADD THIS
+
 
 
 # ===== BASE =====
@@ -418,3 +421,144 @@ class UserProfileResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+
+# Enums for schemas (match your model enums)
+class SupportCategory(str, Enum):
+    tools = "tools"
+    fertilizer = "fertilizer"
+    seeds = "seeds"
+    irrigation = "irrigation"
+    other = "other"
+
+
+class SupportStatus(str, Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+# Base Support Request Schema
+class SupportRequestBase(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    donor: Optional[str] = None
+    amount: float = Field(..., gt=0)
+    message: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1)
+    contact: str = Field(..., min_length=1)
+    category: SupportCategory = SupportCategory.other
+
+    @field_validator("amount")
+    @classmethod
+    def validate_amount(cls, v):
+        if v <= 0:
+            raise ValueError("Amount must be greater than 0")
+        return v
+
+
+# Schema for creating support request (without image)
+class SupportRequestCreate(SupportRequestBase):
+    user_id: Optional[int] = None
+
+
+# Schema for creating support request with image
+class SupportRequestCreateWithImage(SupportRequestCreate):
+    image_url: Optional[str] = None
+
+
+# Schema for updating support request
+class SupportRequestUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    donor: Optional[str] = None
+    amount: Optional[float] = Field(None, gt=0)
+    message: Optional[str] = Field(None, min_length=1)
+    name: Optional[str] = Field(None, min_length=1)
+    contact: Optional[str] = Field(None, min_length=1)
+    category: Optional[SupportCategory] = None
+
+    @field_validator("amount")
+    @classmethod
+    def validate_amount(cls, v):
+        if v is not None and v <= 0:
+            raise ValueError("Amount must be greater than 0")
+        return v
+
+
+# Schema for updating status only
+class SupportRequestStatusUpdate(BaseModel):
+    status: SupportStatus
+
+
+# Schema for response (output)
+class SupportRequestOut(BaseModel):
+    id: int
+    title: str
+    donor: Optional[str] = None
+    amount: float
+    message: str
+    name: str
+    contact: str
+    category: SupportCategory
+    status: SupportStatus
+    user_id: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+# Schema for paginated response
+class PaginatedSupportResponse(BaseModel):
+    success: bool
+    count: int
+    total: int
+    page: int
+    pages: int
+    data: List[SupportRequestOut]
+
+
+# Schema for single response
+class SingleSupportResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+    data: Optional[SupportRequestOut] = None
+
+
+# Schema for delete response
+class DeleteResponse(BaseModel):
+    success: bool
+    message: str
+
+
+# Category stats schema
+class CategoryStats(BaseModel):
+    category: SupportCategory
+    count: int
+    total_amount: float
+
+
+# Overview stats schema
+class OverviewStats(BaseModel):
+    total_requests: int
+    total_amount: float
+    pending: int
+    approved: int
+    rejected: int
+
+
+# Recent request schema
+class RecentRequest(BaseModel):
+    id: int
+    title: str
+    amount: float
+    status: SupportStatus
+    created_at: Optional[datetime] = None
+
+
+# Statistics response schema
+class SupportStatsResponse(BaseModel):
+    success: bool
+    data: dict
