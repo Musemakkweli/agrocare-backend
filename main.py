@@ -55,7 +55,8 @@ SECRET_KEY = "supersecretkey123"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# CryptContext with truncate_error=True automatically handles bcrypt's 72-byte limit
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", truncate_error=True)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 if __name__ == "__main__":
@@ -129,37 +130,14 @@ def root():
 # ======================
 # Password utilities
 # ======================
-MAX_BCRYPT_LENGTH = 72  # bcrypt limit
 
 def hash_password(password: str) -> str:
-    # Handle encoding properly for bcrypt 72-byte limit
-    if isinstance(password, str):
-        password_bytes = password.encode('utf-8')
-    else:
-        password_bytes = bytes(password)
-    
-    # Truncate to 72 bytes if needed
-    if len(password_bytes) > 72:
-        truncated_password = password_bytes[:72].decode('utf-8', errors='ignore')
-    else:
-        truncated_password = password
-    
-    return pwd_context.hash(truncated_password)
+    # passlib with truncate_error=True handles bcrypt's 72-byte limit automatically
+    return pwd_context.hash(password)
 
 def verify_password(plain: str, hashed: str) -> bool:
-    # Handle encoding properly for bcrypt 72-byte limit
-    if isinstance(plain, str):
-        plain_bytes = plain.encode('utf-8')
-    else:
-        plain_bytes = bytes(plain)
-    
-    # Truncate to 72 bytes if needed  
-    if len(plain_bytes) > 72:
-        truncated_plain = plain_bytes[:72].decode('utf-8', errors='ignore')
-    else:
-        truncated_plain = plain
-    
-    return pwd_context.verify(truncated_plain, hashed)
+    # passlib with truncate_error=True handles bcrypt's 72-byte limit automatically
+    return pwd_context.verify(plain, hashed)
 
 
 # ======================
