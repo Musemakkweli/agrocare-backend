@@ -55,8 +55,9 @@ SECRET_KEY = "supersecretkey123"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-# CryptContext with argon2 as primary, but bcrypt for backward compatibility with existing hashes
-# New passwords use argon2, existing bcrypt hashes can still be verified
+# CryptContext with argon2 as primary, bcrypt as deprecated for auto-migration
+# Existing bcrypt hashes can be verified, new passwords use argon2
+# On successful login with old bcrypt hash, it's automatically rehashed to argon2
 pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="bcrypt")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -133,11 +134,11 @@ def root():
 # ======================
 
 def hash_password(password: str) -> str:
-    # passlib with truncate_error=True handles bcrypt's 72-byte limit automatically
+    # Hash password with argon2
     return pwd_context.hash(password)
 
 def verify_password(plain: str, hashed: str) -> bool:
-    # passlib with truncate_error=True handles bcrypt's 72-byte limit automatically
+    # Verify password with argon2
     return pwd_context.verify(plain, hashed)
 
 
@@ -185,6 +186,11 @@ def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
 
     if not db_user.is_approved:
         raise HTTPException(403, "User not approved yet")
+
+    # Automatically rehash old bcrypt passwords to argon2
+    if pwd_context.needs_update(db_user.password):
+        db_user.password = hash_password(user.password)
+        db.commit()
 
     token = create_access_token({"id": db_user.id})
 
