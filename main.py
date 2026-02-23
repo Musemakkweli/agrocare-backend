@@ -3,9 +3,11 @@ import os
 import time
 from fastapi.responses import JSONResponse   
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File,Form,Path, Request
+from fastapi import Query 
 from supabase import create_client, Client
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer
+from services.notification_service import NotificationService
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from datetime import datetime, timedelta, date
@@ -157,24 +159,192 @@ def register_user(user: schemas.UserRegister, db: Session = Depends(get_db)):
         full_name=user.full_name,
         email=user.email,
         phone=user.phone,
-        password=hash_password(user.password),  # truncated here
+        password=hash_password(user.password),
         role=user.role,
-        is_approved=False
+        is_approved=False  # All new users need approval
     )
 
     db.add(new_user)
+    db.flush()  # Get user ID before committing
+
+    # ===== CREATE REGISTRATION NOTIFICATIONS =====
+    try:
+        from services.notification_service import NotificationService
+        
+        # 1. Send welcome notification to the new user (role-specific message)
+        welcome_messages = {
+            "farmer": "Thank you for joining as a Farmer. Start reporting your farm issues!",
+            "agronomist": "Welcome Agronomist! You'll receive complaints to review and provide solutions.",
+            "donor": "Thank you for your generosity! You'll be notified about farmers in need.",
+            "leader": "Welcome Leader! You'll oversee community agricultural activities.",
+            "finance": "Welcome to the Finance team! You'll handle transactions and budgeting.",
+            "admin": "Welcome Admin! You have full system access."
+        }
+        
+        welcome_message = welcome_messages.get(
+            user.role, 
+            f"Thank you for joining AgroCare as a {user.role}."
+        )
+        
+        NotificationService.create_notification(
+            db=db,
+            user_id=new_user.id,
+            role=new_user.role,
+            title="🎉 Welcome to AgroCare!",
+            message=f"Hello {new_user.full_name}! {welcome_message} Your account is pending approval.",
+            type="welcome",
+            priority="normal",
+            action_url="/dashboard",
+            extra_data={
+                "user_id": new_user.id,
+                "role": new_user.role,
+                "needs_approval": True
+            }
+        )
+        print(f"✅ Welcome notification sent to new {user.role}: {new_user.id}")
+        
+        # 2. Get all admin users (admins need to approve all registrations)
+        admins = db.query(models.User).filter(models.User.role == "admin").all()
+        
+        # 3. Role-specific notification titles and priorities
+        role_titles = {
+            "farmer": "👨‍🌾 New Farmer Registration",
+            "agronomist": "🌱 New Agronomist Registration",
+            "donor": "💰 New Donor Registration",
+            "leader": "⭐ New Leader Registration",
+            "finance": "📊 New Finance Team Member",
+            "admin": "🔐 New Admin Registration"
+        }
+        
+        role_priorities = {
+            "farmer": "normal",
+            "agronomist": "high",  # Agronomists are important for complaints
+            "donor": "normal",
+            "leader": "high",      # Leaders need quick approval
+            "finance": "normal",
+            "admin": "critical"     # Admin registrations are highest priority
+        }
+        
+        title = role_titles.get(user.role, "👤 New User Registration")
+        priority = role_priorities.get(user.role, "normal")
+        
+        # 4. Notify admins about new registration
+        admin_count = 0
+        for admin in admins:
+            # Skip if admin is the new user (rare case)
+            if admin.id == new_user.id:
+                continue
+                
+            # Custom message based on role
+            role_messages = {
+                "farmer": f"New farmer needs approval: {new_user.full_name} from {new_user.location if hasattr(new_user, 'location') else 'Unknown'}",
+                "agronomist": f"New agronomist registered: {new_user.full_name}. They can now review complaints.",
+                "donor": f"New donor registered: {new_user.full_name}. Ready to support farmers.",
+                "leader": f"New community leader registered: {new_user.full_name}. Requires immediate review.",
+                "finance": f"New finance team member: {new_user.full_name}. Needs access to financial tools.",
+                "admin": f"⚠️ NEW ADMIN REGISTRATION: {new_user.full_name} ({new_user.email}). VERIFY IMMEDIATELY!"
+            }
+            
+            message = role_messages.get(
+                user.role, 
+                f"New {user.role} registered: {new_user.full_name} ({new_user.email})"
+            )
+            
+            NotificationService.create_notification(
+                db=db,
+                user_id=admin.id,
+                role="admin",
+                title=title,
+                message=message,
+                type="user_registered",
+                related_id=new_user.id,
+                priority=priority,
+                action_url=f"/admin/users/{new_user.id}",
+                extra_data={
+                    "user_id": new_user.id,
+                    "user_name": new_user.full_name,
+                    "user_email": new_user.email,
+                    "user_role": user.role,
+                    "needs_approval": True,
+                    "priority": priority
+                }
+            )
+            admin_count += 1
+        
+        print(f"✅ Registration notifications sent to {admin_count} admins")
+        
+        # 5. For specific roles, notify other relevant users
+        
+        # If new agronomist registered, notify leaders too
+        if user.role == "agronomist":
+            leaders = db.query(models.User).filter(models.User.role == "leader").all()
+            for leader in leaders:
+                NotificationService.create_notification(
+                    db=db,
+                    user_id=leader.id,
+                    role="leader",
+                    title="🌱 New Agronomist Available",
+                    message=f"New agronomist {new_user.full_name} has registered and will help with farm complaints.",
+                    type="team_update",
+                    related_id=new_user.id,
+                    priority="normal",
+                    action_url=f"/team/{new_user.id}"
+                )
+        
+        # If new donor registered, notify finance team
+        elif user.role == "donor":
+            finance_team = db.query(models.User).filter(models.User.role == "finance").all()
+            for finance in finance_team:
+                NotificationService.create_notification(
+                    db=db,
+                    user_id=finance.id,
+                    role="finance",
+                    title="💰 New Donor Registered",
+                    message=f"New donor {new_user.full_name} has registered. Ready for financial tracking.",
+                    type="donor_update",
+                    related_id=new_user.id,
+                    priority="normal",
+                    action_url=f"/donors/{new_user.id}"
+                )
+        
+        # If new leader registered, notify all admins (already done) and agronomists
+        elif user.role == "leader":
+            agronomists = db.query(models.User).filter(models.User.role == "agronomist").all()
+            for agronomist in agronomists:
+                NotificationService.create_notification(
+                    db=db,
+                    user_id=agronomist.id,
+                    role="agronomist",
+                    title="⭐ New Community Leader",
+                    message=f"New leader {new_user.full_name} has joined. They'll coordinate community efforts.",
+                    type="team_update",
+                    related_id=new_user.id,
+                    priority="normal",
+                    action_url=f"/leaders/{new_user.id}"
+                )
+        
+    except Exception as e:
+        print(f"⚠️ Failed to create registration notifications: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        # Don't fail the registration if notifications fail
+
     db.commit()
     db.refresh(new_user)
 
     return new_user
 
+# ======================from fastapi import Request
 
-# ======================
 # Login (email OR phone)
 # ======================
 @app.post("/login", response_model=schemas.LoginResponseWithMessage)
-def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
-
+def login_user(
+    user: schemas.UserLogin, 
+    request: Request,  # Add this to get IP
+    db: Session = Depends(get_db)
+):
+    # Find user by email or phone
     db_user = db.query(models.User).filter(
         or_(
             models.User.email == user.identifier,
@@ -182,7 +352,7 @@ def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
         )
     ).first()
 
-    if not db_user or not verify_password(user.password, db_user.password):  # truncated here
+    if not db_user or not verify_password(user.password, db_user.password):
         raise HTTPException(400, "Invalid email or phone or password")
 
     if not db_user.is_approved:
@@ -194,20 +364,94 @@ def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
         db.commit()
 
     token = create_access_token({"id": db_user.id})
+    
+    # ===== CREATE LOGIN NOTIFICATIONS =====
+    try:
+        from services.notification_service import NotificationService
+        
+        # Get client info
+        client_ip = request.client.host if request.client else "Unknown"
+        user_agent = request.headers.get("user-agent", "Unknown")[:100]
+        login_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 1. Login notification
+        NotificationService.create_notification(
+            db=db,
+            user_id=db_user.id,
+            role=db_user.role,
+            title="🔐 New Login",
+            message=f"Logged in at {login_time} from {client_ip}",
+            type="login_alert",
+            priority="low",
+            action_url="/dashboard",
+            extra_data={
+                "ip": client_ip,
+                "time": login_time,
+                "user_agent": user_agent
+            }
+        )
+        
+        # 2. Profile reminder
+        if not db_user.is_profile_completed:
+            NotificationService.create_notification(
+                db=db,
+                user_id=db_user.id,
+                role=db_user.role,
+                title="📝 Complete Your Profile",
+                message="Please complete your profile to get the most out of AgroCare.",
+                type="profile_reminder",
+                priority="normal",
+                action_url="/profile/edit"
+            )
+        
+        # 3. Role-specific notifications
+        if db_user.role == "admin":
+            # Count pending approvals
+            pending = db.query(models.User).filter(
+                models.User.is_approved == False
+            ).count()
+            
+            if pending > 0:
+                NotificationService.create_notification(
+                    db=db,
+                    user_id=db_user.id,
+                    role="admin",
+                    title="⏳ Pending Approvals",
+                    message=f"You have {pending} users awaiting approval.",
+                    type="pending_approvals",
+                    priority="high",
+                    action_url="/admin/approvals"
+                )
+        
+        elif db_user.role == "agronomist":
+            pending_complaints = db.query(models.Complaint).filter(
+                models.Complaint.status == "pending"
+            ).count()
+            
+            if pending_complaints > 0:
+                NotificationService.create_notification(
+                    db=db,
+                    user_id=db_user.id,
+                    role="agronomist",
+                    title="🌱 Pending Complaints",
+                    message=f"{pending_complaints} complaints need your review.",
+                    type="pending_complaints",
+                    priority="high",
+                    action_url="/complaints/pending"
+                )
+        
+    except Exception as e:
+        print(f"⚠️ Login notification error: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
     return {
         "message": "Successfully logged in",
         "access_token": token,
         "token_type": "bearer",
-
-        # ✅ send full user
         "user": db_user,
-
-        # ✅ send profile status
         "is_profile_completed": db_user.is_profile_completed
     }
-
-
 # ======================
 # Helper function
 # ======================
@@ -571,7 +815,7 @@ def get_crop_health(user_id: int, db: Session = Depends(get_db)):
         data.append({"week": f"W{i}", "health": random.randint(50, 90)})
     return data
 
-# complaints endpoints
+# complaints 
 @app.post("/complaints", response_model=schemas.ComplaintOut)
 def create_complaint(
     user_id: int = Form(...),
@@ -583,19 +827,19 @@ def create_complaint(
     db: Session = Depends(get_db)
 ):
     image_url = None
-    if image:
+    if image and image.filename:  # Check if image exists and has filename
         filename = f"{int(time.time())}_{image.filename}"
         content = image.file.read()
 
-        # Remove the invalid res.error check
         try:
             supabase.storage.from_(BUCKET_NAME).upload(filename, content)
+            image_url = supabase.storage.from_(BUCKET_NAME).get_public_url(filename)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Supabase upload failed: {str(e)}")
+            # Log error but don't fail the complaint creation
+            print(f"⚠️ Image upload failed: {str(e)}")
+            # Continue without image
 
-        # get_public_url returns a string directly — no .public_url
-        image_url = supabase.storage.from_(BUCKET_NAME).get_public_url(filename)
-
+    # Create complaint
     complaint = models.Complaint(
         title=title,
         type=type,
@@ -607,8 +851,78 @@ def create_complaint(
     )
 
     db.add(complaint)
+    db.flush()  # Get complaint.id before committing
+
+    # ===== CREATE NOTIFICATIONS =====
+    try:
+        from services.notification_service import NotificationService
+        
+        # 1. Notify the user who created the complaint
+        NotificationService.create_notification(
+            db=db,
+            user_id=user_id,
+            role="farmer",
+            title="✅ Complaint Submitted Successfully",
+            message=f"Your complaint '{title}' has been submitted and is pending review.",
+            type="complaint_created",
+            related_id=complaint.id,
+            priority="normal",
+            action_url=f"/complaint/{complaint.id}",
+            extra_data={"status": "pending", "complaint_type": type}
+        )
+        
+        # 2. Get all admin users
+        admins = db.query(models.User).filter(models.User.role == "admin").all()
+        
+        # 3. Notify all admins
+        for admin in admins:
+            # Determine priority based on complaint type
+            priority = "high" if type in ["Pest Attack", "Theft", "Weather Damage"] else "normal"
+            
+            NotificationService.create_notification(
+                db=db,
+                user_id=admin.id,
+                role="admin",
+                title="🚨 New Complaint Requires Review",
+                message=f"New {type} complaint: '{title}' from User #{user_id} at {location}",
+                type="admin_alert",
+                related_id=complaint.id,
+                priority=priority,
+                action_url=f"/admin/complaint/{complaint.id}",
+                extra_data={
+                    "complaint_type": type, 
+                    "user_id": user_id,
+                    "location": location
+                }
+            )
+        
+        # 4. If urgent, create high-priority notification for user
+        if type in ["Pest Attack", "Theft"]:
+            NotificationService.create_notification(
+                db=db,
+                user_id=user_id,
+                role="farmer",
+                title="⚠️ Urgent: Action Required",
+                message=f"Your '{type}' complaint has been flagged as urgent. An officer will contact you soon.",
+                type="urgent_alert",
+                related_id=complaint.id,
+                priority="high",
+                action_url=f"/complaint/{complaint.id}",
+                extra_data={"urgent": True, "complaint_type": type}
+            )
+        
+        print(f"✅ Notifications created for complaint {complaint.id}")
+        
+    except Exception as e:
+        # Log notification error but don't fail the complaint creation
+        print(f"⚠️ Failed to create notifications: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+    # Commit everything
     db.commit()
     db.refresh(complaint)
+    
     return complaint
 
 # Get complaints by user
@@ -622,6 +936,7 @@ def get_complaints_by_user(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No complaints found for this user")
     
     return complaints
+
 # Get all complaints (for admin)
 @app.get("/complaints", response_model=List[schemas.ComplaintOut])
 def get_all_complaints(db: Session = Depends(get_db)):
@@ -631,10 +946,12 @@ def get_all_complaints(db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No complaints found")
     
     return complaints
-# Update complaint status (admin)
+
+# Update complaint status 
 @app.put("/complaints/{complaint_id}", response_model=schemas.ComplaintOut)
 def update_complaint(
     complaint_id: int,
+    user_id: int = Query(..., description="ID of the user updating the complaint"),  # Add this
     title: Optional[str] = Form(None),
     type: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
@@ -646,39 +963,220 @@ def update_complaint(
     if not complaint:
         raise HTTPException(status_code=404, detail="Complaint not found")
 
-    if title is not None:
+    # Store old values for notification
+    old_values = {
+        "title": complaint.title,
+        "type": complaint.type,
+        "description": complaint.description,
+        "location": complaint.location,
+        "image": complaint.image
+    }
+    
+    # Track what changed
+    changes = []
+    
+    # Update fields if provided
+    if title is not None and title != complaint.title:
         complaint.title = title
-    if type is not None:
+        changes.append(f"title changed to '{title}'")
+    
+    if type is not None and type != complaint.type:
         complaint.type = type
-    if description is not None:
+        changes.append(f"type changed to '{type}'")
+    
+    if description is not None and description != complaint.description:
         complaint.description = description
-    if location is not None:
+        changes.append("description updated")
+    
+    if location is not None and location != complaint.location:
         complaint.location = location
+        changes.append(f"location changed to '{location}'")
 
-    if image:
-        filename = f"{int(time.time())}_{image.filename}"
-        content = image.file.read()
-        supabase.storage.from_(BUCKET_NAME).upload(filename, content)
+    # Handle image update
+    image_updated = False
+    if image and image.filename:
+        try:
+            filename = f"{int(time.time())}_{image.filename}"
+            content = image.file.read()
+            supabase.storage.from_(BUCKET_NAME).upload(filename, content)
+            complaint.image = supabase.storage.from_(BUCKET_NAME).get_public_url(filename)
+            changes.append("image updated")
+            image_updated = True
+        except Exception as e:
+            print(f"⚠️ Image upload failed: {e}")
 
-        # ✅ Get public URL directly
-        complaint.image = supabase.storage.from_(BUCKET_NAME).get_public_url(filename)
+    db.flush()
+
+    # ===== CREATE UPDATE NOTIFICATIONS =====
+    try:
+        from services.notification_service import NotificationService
+        
+        # Only send notification if something actually changed
+        if changes:
+            changes_text = ", ".join(changes)
+            
+            # 1. Always notify the complaint owner (if different from updater)
+            if complaint.created_by != user_id:
+                NotificationService.create_notification(
+                    db=db,
+                    user_id=complaint.created_by,
+                    role="farmer",
+                    title="📝 Complaint Updated",
+                    message=f"Your complaint '{complaint.title}' was updated: {changes_text}",
+                    type="complaint_updated",
+                    related_id=complaint.id,
+                    priority="normal",
+                    action_url=f"/complaint/{complaint.id}",
+                    extra_data={
+                        "updated_by": user_id,
+                        "changes": changes,
+                        "old_values": old_values
+                    }
+                )
+                print(f"✅ Update notification sent to complaint owner (User {complaint.created_by})")
+            
+            # 2. If the owner is the one updating, send them a confirmation
+            else:
+                NotificationService.create_notification(
+                    db=db,
+                    user_id=user_id,
+                    role="farmer",
+                    title="✅ Complaint Updated Successfully",
+                    message=f"You updated your complaint: {changes_text}",
+                    type="complaint_self_updated",
+                    related_id=complaint.id,
+                    priority="normal",
+                    action_url=f"/complaint/{complaint.id}",
+                    extra_data={"changes": changes}
+                )
+                print(f"✅ Self-update confirmation sent to User {user_id}")
+            
+            # 3. Notify admins about the update (except the updater if they're an admin)
+            admins = db.query(models.User).filter(models.User.role == "admin").all()
+            admin_count = 0
+            for admin in admins:
+                if admin.id != user_id:  # Don't notify the admin who made the update
+                    NotificationService.create_notification(
+                        db=db,
+                        user_id=admin.id,
+                        role="admin",
+                        title="🔄 Complaint Updated",
+                        message=f"Complaint '{complaint.title}' was updated by User #{user_id}: {changes_text}",
+                        type="admin_alert",
+                        related_id=complaint.id,
+                        priority="normal",
+                        action_url=f"/admin/complaint/{complaint.id}",
+                        extra_data={
+                            "updated_by": user_id,
+                            "complaint_id": complaint.id,
+                            "changes": changes
+                        }
+                    )
+                    admin_count += 1
+            
+            print(f"✅ Update notifications sent to {admin_count} admins")
+        
+        else:
+            print("ℹ️ No changes detected - no notifications sent")
+            
+    except Exception as e:
+        print(f"⚠️ Failed to create update notifications: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
     db.commit()
     db.refresh(complaint)
     return complaint
-#Delete complaint (admin)
-    
+
+#Delete complaint 
 @app.delete("/complaints/{complaint_id}", response_model=dict)
-def delete_complaint(complaint_id: int, db: Session = Depends(get_db)):
+def delete_complaint(
+    complaint_id: int, 
+    user_id: int = Query(..., description="ID of the user deleting the complaint"),
+    db: Session = Depends(get_db)
+):
     complaint = db.query(models.Complaint).filter(models.Complaint.id == complaint_id).first()
     if not complaint:
         raise HTTPException(status_code=404, detail="Complaint not found")
     
+    # Store complaint info
+    complaint_info = {
+        "id": complaint.id,
+        "title": complaint.title,
+        "created_by": complaint.created_by,
+        "type": complaint.type,
+        "location": complaint.location
+    }
+    
+    # Delete the complaint
     db.delete(complaint)
+    db.flush()
+
+    # ===== FIXED NOTIFICATIONS =====
+    try:
+        from services.notification_service import NotificationService
+        
+        # FIX 1: ALWAYS notify the complaint owner (even if they deleted it themselves)
+        NotificationService.create_notification(
+            db=db,
+            user_id=complaint_info["created_by"],
+            role="farmer",
+            title="🗑️ Complaint Deleted",
+            message=f"Your complaint '{complaint_info['title']}' has been deleted." + 
+                   (f" (Deleted by you)" if complaint_info["created_by"] == user_id else f" (Deleted by User #{user_id})"),
+            type="complaint_deleted",
+            related_id=complaint_info["id"],
+            priority="normal",
+            action_url=None,
+            extra_data={
+                "deleted_by": user_id,
+                "deleted_by_self": complaint_info["created_by"] == user_id,
+                "complaint_type": complaint_info["type"],
+                "complaint_title": complaint_info["title"]
+            }
+        )
+        print(f"✅ Deletion notification sent to complaint owner (User {complaint_info['created_by']})")
+        
+        # 2. Notify admins about deletion (except the deleter if they're an admin)
+        admins = db.query(models.User).filter(models.User.role == "admin").all()
+        admin_count = 0
+        for admin in admins:
+            if admin.id != user_id:  # Don't notify the admin who deleted
+                NotificationService.create_notification(
+                    db=db,
+                    user_id=admin.id,
+                    role="admin",
+                    title="🗑️ Complaint Deleted",
+                    message=f"Complaint '{complaint_info['title']}' was deleted by User #{user_id}",
+                    type="admin_alert",
+                    related_id=complaint_info["id"],
+                    priority="normal",
+                    action_url=None,
+                    extra_data={
+                        "deleted_by": user_id,
+                        "complaint_title": complaint_info["title"],
+                        "complaint_type": complaint_info["type"],
+                        "location": complaint_info["location"]
+                    }
+                )
+                admin_count += 1
+        
+        print(f"✅ Deletion notifications sent to {admin_count} admins")
+        
+    except Exception as e:
+        print(f"⚠️ Failed to create deletion notifications: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
     db.commit()
 
-    return {"message": f"Complaint with ID {complaint_id} has been deleted successfully."}
-
+    return {
+        "message": f"Complaint with ID {complaint_id} has been deleted successfully.",
+        "notifications_sent": {
+            "owner_notified": True,  # Always true now
+            "admin_count": admin_count if 'admin_count' in locals() else 0
+        }
+    }
 # Add a new field
 @app.post("/fields", response_model=schemas.FieldOut)
 def create_field(field: schemas.FieldCreate, db: Session = Depends(get_db)):
@@ -1805,3 +2303,24 @@ def complaint_status(db: Session = Depends(get_db)):
     ]
 
     return JSONResponse(content=result)
+
+
+@app.get("/notifications/{user_id}", response_model=list[schemas.NotificationOut])
+def fetch_notifications(user_id: int, db: Session = Depends(get_db)):
+    """
+    Fetch all notifications for a user.
+    Unread notifications appear first, newest on top.
+    This acts as the "automatic notification fetch" endpoint.
+    """
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    notifications = (
+        db.query(models.Notification)
+        .filter(models.Notification.user_id == user_id)
+        .order_by(models.Notification.is_read.asc(), models.Notification.created_at.desc())
+        .all()
+    )
+
+    return notifications

@@ -19,7 +19,6 @@ class DonorType(str, enum.Enum):
     person = "person"
     organization = "organization"
 
-
 # ===== USER MODEL =====
 class User(Base):
     __tablename__ = "users"
@@ -28,28 +27,36 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     full_name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False)
-    password = Column(String, nullable=False)  # Store hashed passwords in production
+    password = Column(String, nullable=False)
     role = Column(Enum(Role), nullable=False)
     chat_history = relationship("AIChatHistory", back_populates="user")
-      # ===== Profile picture =====
+
+    # ===== Profile picture =====
     profile_picture = Column(String, nullable=True)
-    
+
     # ===== Profile completion & approval =====
-    is_approved = Column(Boolean, default=False)   # Admin approves the user
-    is_profile_completed = Column(Boolean, default=False)  # User completes profile after login
+    is_approved = Column(Boolean, default=False)
+    is_profile_completed = Column(Boolean, default=False)
 
     # ===== Role-specific fields =====
-    farm_location = Column(String, nullable=True)    # farmer
-    crop_type = Column(String, nullable=True)        # farmer
-    expertise = Column(String, nullable=True)        # agronomist
-    license = Column(String, nullable=True)          # agronomist
-    phone = Column(String, nullable=True)            # all roles
-    org_name = Column(String, nullable=True)         # donor organization
-    funding = Column(String, nullable=True)          # donor organization
-    donor_type = Column(Enum(DonorType), nullable=True)  # donor
-    leader_title = Column(String, nullable=True)     # leader
-    district = Column(String, nullable=True)         # leader
-    department = Column(String, nullable=True)       # finance
+    farm_location = Column(String, nullable=True)
+    crop_type = Column(String, nullable=True)
+    expertise = Column(String, nullable=True)
+    license = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    org_name = Column(String, nullable=True)
+    funding = Column(String, nullable=True)
+    donor_type = Column(Enum(DonorType), nullable=True)
+    leader_title = Column(String, nullable=True)
+    district = Column(String, nullable=True)
+    department = Column(String, nullable=True)
+
+    # ===== Notifications relationship =====
+    notifications = relationship(
+        "Notification",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
 
 
 class Program(Base):
@@ -224,3 +231,22 @@ class SupportRequest(Base):
 
     def __repr__(self):
         return f"<SupportRequest {self.id} - {self.title}>"
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(50), nullable=False)  # 'farmer', 'admin', etc.
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    type = Column(String(50), nullable=False)  # 'complaint_update', 'system_alert', etc.
+    related_id = Column(Integer, nullable=True)
+    is_read = Column(Boolean, default=False)
+    priority = Column(String(20), default='normal')
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+    action_url = Column(String(255), nullable=True)
+    extra_data = Column(JSON, nullable=True)  # renamed from 'metadata'
+
+    user = relationship("User", back_populates="notifications")

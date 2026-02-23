@@ -567,3 +567,60 @@ class ComplaintStatusOut(BaseModel):
     name: str
     value: int
     color: str
+
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+from enum import Enum
+
+class NotificationType(str, Enum):
+    complaint_update = "complaint_update"
+    system_alert = "system_alert"
+    general = "general"
+
+class NotificationPriority(str, Enum):
+    low = "low"
+    normal = "normal"
+    high = "high"
+
+class NotificationCreate(BaseModel):
+    user_id: int
+    role: str
+    title: str
+    message: str
+    type: NotificationType
+    related_id: Optional[int] = None
+    priority: Optional[NotificationPriority] = NotificationPriority.normal
+    expires_at: Optional[datetime] = None
+    action_url: Optional[str] = None
+    extra_data: Optional[dict] = None
+
+class NotificationOut(BaseModel):
+    id: int
+    user_id: int
+    role: str
+    title: str
+    message: str
+    type: str
+    related_id: Optional[int]
+    is_read: bool
+    priority: str
+    created_at: datetime
+    expires_at: Optional[datetime]
+    action_url: Optional[str]
+    extra_data: Optional[dict]
+
+    class Config:
+        from_attributes = True
+        
+class NotificationType(str, Enum):
+    complaint_update = "complaint_update"
+    complaint_created = "complaint_created"
+    complaint_updated = "complaint_updated"
+    complaint_deleted = "complaint_deleted"
+    admin_alert = "admin_alert"
+    system_alert = "system_alert"
+    welcome = "welcome"
+    user_registered = "user_registered"
+    team_update = "team_update"
+    donor_update = "donor_update"
