@@ -1826,6 +1826,7 @@ def get_user_profile(
         "role": user.role.value if user.role else None,
         "is_approved": user.is_approved,
         "is_profile_completed": user.is_profile_completed,
+        "profile_picture": user.profile_picture, 
     }
     
     # Add role-specific fields
@@ -1949,7 +1950,6 @@ def update_user_profile(
         "is_profile_completed": user.is_profile_completed
     }
 
-
 # ======================
 # Upload Profile Picture
 # ======================
@@ -1962,7 +1962,7 @@ async def upload_profile_picture(
     db: Session = Depends(get_db)
 ):
     """
-    Upload profile picture to Supabase storage
+    Upload profile picture to Supabase storage and save URL in DB
     """
     # Validate file type
     if not file.content_type.startswith("image/"):
@@ -1976,7 +1976,7 @@ async def upload_profile_picture(
     if file_size > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 5MB)")
     
-    # Get user from database
+    # Get user
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -1984,24 +1984,24 @@ async def upload_profile_picture(
     try:
         import uuid
         import os
-        
+
         # Read file content
         content = await file.read()
-        
+
         # Generate unique filename
         file_extension = os.path.splitext(file.filename)[1]
         filename = f"profile_{user_id}_{uuid.uuid4()}{file_extension}"
-        
+
         # Upload to Supabase
         supabase.storage.from_(BUCKET_NAME).upload(filename, content)
-        
+
         # Get public URL
         image_url = supabase.storage.from_(BUCKET_NAME).get_public_url(filename)
-        
-        # You need to add profile_picture column to your User model first
-        # user.profile_picture = image_url
-        # db.commit()
-        
+
+        # ✅ Save URL in DB
+        user.profile_picture = image_url
+        db.commit()
+
         return {
             "message": "Profile picture uploaded successfully",
             "imageUrl": image_url
@@ -2009,8 +2009,6 @@ async def upload_profile_picture(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Supabase upload failed: {str(e)}")
-
-
 # ======================
 # Get User Statistics
 # ======================

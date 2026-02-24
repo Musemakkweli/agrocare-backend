@@ -373,6 +373,7 @@ class ProfileUpdate(BaseModel):
     # Common fields
     fullname: Optional[str] = None
     phone: Optional[str] = None
+
     
     # Farmer fields
     farm_location: Optional[str] = None
@@ -394,6 +395,7 @@ class ProfileUpdate(BaseModel):
     # Finance fields
     department: Optional[str] = None
 
+
 class ProfileUpdateResponse(BaseModel):
     message: str
     is_profile_completed: bool
@@ -406,6 +408,10 @@ class UserProfileResponse(BaseModel):
     role: str
     is_approved: bool
     is_profile_completed: bool
+    profile_picture: Optional[str] = None 
+
+
+    
     
     # Optional role-specific fields
     farm_location: Optional[str] = None
