@@ -21,7 +21,6 @@ import random
 import httpx
 from typing import Optional
 from dotenv import load_dotenv
-from auth import get_current_user
 from models import AIChatHistory, Complaint, ComplaintStatus, User
 load_dotenv()  # load variables from .env
 
