@@ -21,7 +21,8 @@ import random
 import httpx
 from typing import Optional
 from dotenv import load_dotenv
-from models import AIChatHistory, Complaint, ComplaintStatus
+from auth import get_current_user
+from models import AIChatHistory, Complaint, ComplaintStatus, User
 load_dotenv()  # load variables from .env
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -2323,3 +2324,82 @@ def fetch_notifications(user_id: int, db: Session = Depends(get_db)):
     )
 
     return notifications
+
+# request password change OTP
+@app.post("/request-password-otp")
+def request_password_otp_simple(
+    identifier: str,  # email or phone
+    db: Session = Depends(get_db)
+):
+    user = db.query(models.User).filter(
+        or_(models.User.email == identifier, models.User.phone == identifier)
+    ).first()
+
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    otp = str(random.randint(100000, 999999))
+
+    otp_record = models.PasswordChangeOTP(
+        user_id=user.id,
+        otp_code=otp,
+        expires_at=datetime.utcnow() + timedelta(minutes=10),
+        is_used=False
+    )
+
+    db.add(otp_record)
+    db.commit()
+    db.refresh(otp_record)
+
+    return {"success": True, "message": "OTP generated", "otp_for_testing": otp}
+
+# change password using OTP
+@app.post("/change-password")
+def change_password(
+    data: schemas.ChangePasswordRequest,
+    db: Session = Depends(get_db)
+):
+    # 1️⃣ Find the user by email or phone
+    user = db.query(models.User).filter(
+        or_(
+            models.User.email == data.identifier,
+           models.User.phone == data.identifier
+        )
+    ).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 2️⃣ Check OTP
+    otp_record = db.query(models.PasswordChangeOTP).filter(
+        models.PasswordChangeOTP.user_id == user.id,
+        models.PasswordChangeOTP.otp_code == data.otp_code,
+        models.PasswordChangeOTP.is_used == False
+    ).order_by(models.PasswordChangeOTP.created_at.desc()).first()
+
+    if not otp_record:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+
+    if otp_record.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="OTP has expired")
+
+    # 3️⃣ Check new password confirmation
+    if data.new_password != data.confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match")
+
+    # 4️⃣ Prevent reusing the same password
+    if pwd_context.verify(data.new_password, user.password):
+        raise HTTPException(status_code=400, detail="New password cannot be same as old password")
+
+    # 5️⃣ Update password
+    user.password = pwd_context.hash(data.new_password)
+
+    # 6️⃣ Mark OTP as used
+    otp_record.is_used = True
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Password changed successfully. You can now login with your new password."
+    }

@@ -630,3 +630,15 @@ class NotificationType(str, Enum):
     user_registered = "user_registered"
     team_update = "team_update"
     donor_update = "donor_update"
+
+
+class ChangePasswordRequest(BaseModel):
+    identifier: str  # email or phone
+    otp_code: str
+    new_password: str = Field(..., min_length=6)
+    confirm_password: str
+
+class OTPResponse(BaseModel):
+    success: bool
+    message: str
+    otp_for_testing: str | None = None  # optional in production
