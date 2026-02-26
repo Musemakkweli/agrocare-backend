@@ -642,3 +642,89 @@ class OTPResponse(BaseModel):
     success: bool
     message: str
     otp_for_testing: str | None = None  # optional in production
+    
+class ActivityCreate(BaseModel):
+    activity_type: str
+    description: str
+    activity_metadata: Optional[dict] = {}
+    status: Optional[str] = "success"
+
+
+class ActivityResponse(BaseModel):
+    id: int
+    user_id: int
+    activity_type: str
+    description: str
+    activity_metadata: Optional[dict]
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================
+# Report Schemas
+# ============================================
+
+class SubmittedBy(BaseModel):
+    full_name: str
+    role: str
+
+    class Config:
+        from_attributes = True
+
+class ReportCreate(BaseModel):
+    program: str
+    type: str  # complaint, feedback, incident
+    description: str
+    priority: Optional[str] = "normal"  # low, normal, high, critical
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "program": "Maize Pest Control Fund",
+                "type": "complaint",
+                "description": "Pests are affecting maize crops in Huye District.",
+                "priority": "high"
+            }
+        }
+
+class ReportResponse(BaseModel):
+    id: int
+    program: str
+    type: str
+    description: str
+    status: str
+    priority: Optional[str]
+    created_at: datetime
+    submitted_by: SubmittedBy
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": 1,
+                "program": "Maize Pest Control Fund",
+                "type": "complaint",
+                "description": "Pests are affecting maize crops in Huye District.",
+                "status": "pending",
+                "priority": "high",
+                "created_at": "2024-01-27T10:30:00Z",
+                "submitted_by": {
+                    "full_name": "John Farmer",
+                    "role": "farmer"
+                }
+            }
+        }
+
+class ReportUpdate(BaseModel):
+    program: Optional[str] = None
+    type: Optional[str] = None
+    description: Optional[str] = None
+    priority: Optional[str] = None
+    status: Optional[str] = None
+
+    class Config:
+        from_attributes = True

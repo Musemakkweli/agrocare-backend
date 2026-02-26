@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Depends, UploadFile, File,Form,Path,
 from fastapi import Query 
 from supabase import create_client, Client
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
 from fastapi.security import OAuth2PasswordBearer
 from services.notification_service import NotificationService
 from passlib.context import CryptContext
@@ -22,6 +23,7 @@ import httpx
 from typing import Optional
 from dotenv import load_dotenv
 from models import AIChatHistory, Complaint, ComplaintStatus, User
+from services.activity_logger import log_activity
 load_dotenv()  # load variables from .env
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -335,13 +337,12 @@ def register_user(user: schemas.UserRegister, db: Session = Depends(get_db)):
     return new_user
 
 # ======================from fastapi import Request
-
 # Login (email OR phone)
 # ======================
 @app.post("/login", response_model=schemas.LoginResponseWithMessage)
 def login_user(
     user: schemas.UserLogin, 
-    request: Request,  # Add this to get IP
+    request: Request,  # To get IP
     db: Session = Depends(get_db)
 ):
     # Find user by email or phone
@@ -353,6 +354,20 @@ def login_user(
     ).first()
 
     if not db_user or not verify_password(user.password, db_user.password):
+        # Optionally log failed login attempts
+        try:
+            from services.activity_logger import log_activity
+            log_activity(
+                db=db,
+                user_id=db_user.id if db_user else None,
+                activity_type="login",
+                description=f"Failed login attempt for identifier '{user.identifier}'",
+                metadata={"ip": request.client.host if request.client else "Unknown"},
+                status="failed"
+            )
+        except Exception:
+            pass
+
         raise HTTPException(400, "Invalid email or phone or password")
 
     if not db_user.is_approved:
@@ -364,7 +379,26 @@ def login_user(
         db.commit()
 
     token = create_access_token({"id": db_user.id})
-    
+
+    # ===== LOG ACTIVITY =====
+    try:
+        from services.activity_logger import log_activity
+
+        log_activity(
+            db=db,
+            user_id=db_user.id,
+            activity_type="login",
+            description="User logged in successfully",
+            metadata={
+                "ip": request.client.host if request.client else "Unknown",
+                "user_agent": request.headers.get("user-agent", "Unknown")[:100]
+            },
+            status="success"
+        )
+
+    except Exception as e:
+        print(f"⚠️ Activity logging error: {str(e)}")
+
     # ===== CREATE LOGIN NOTIFICATIONS =====
     try:
         from services.notification_service import NotificationService
@@ -406,7 +440,6 @@ def login_user(
         
         # 3. Role-specific notifications
         if db_user.role == "admin":
-            # Count pending approvals
             pending = db.query(models.User).filter(
                 models.User.is_approved == False
             ).count()
@@ -562,6 +595,7 @@ def finance_profile(user_id: int, profile: schemas.FinanceProfile, db: Session =
         department=user.department,
         phone=user.phone
     )
+
 # ======================
 # Admin
 # ======================
@@ -2402,3 +2436,20 @@ def change_password(
         "success": True,
         "message": "Password changed successfully. You can now login with your new password."
     }
+
+
+# GET User Activities
+# ----------------------
+@app.get("/activities/user/{user_id}", response_model=List[schemas.ActivityResponse])
+def get_user_activities(user_id: int, db: Session = Depends(get_db)):
+
+    activities = db.query(models.ActivityHistory).filter(
+        models.ActivityHistory.user_id == user_id
+    ).order_by(models.ActivityHistory.created_at.desc()).all()
+
+    if not activities:
+        return []  # or raise HTTPException(404, "No activities found") if you prefer
+
+    return activities
+
+

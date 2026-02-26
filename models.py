@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Enum, Float, ForeignKey, Date, DateTime, Text, JSON, func, TIMESTAMP
+from sqlalchemy import Column, Integer, String, Boolean, Enum, Float, ForeignKey, Date, DateTime, Text, JSON, func, TIMESTAMP,Index 
 from sqlalchemy.orm import relationship
 from database import Base
 import datetime
@@ -56,6 +56,12 @@ class User(Base):
         "Notification",
         back_populates="user",
         cascade="all, delete-orphan"
+    )
+        # Relationship with ActivityHistory
+    activities = relationship(
+        "ActivityHistory",
+        back_populates="user",
+        cascade="all, delete"
     )
 
 
@@ -261,3 +267,86 @@ class PasswordChangeOTP(Base):
     expires_at = Column(DateTime, nullable=False)
     is_used = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class ActivityType(str, enum.Enum):
+    LOGIN = "login"
+    LOGOUT = "logout"
+    PROFILE_UPDATE = "profile_update"
+    PASSWORD_CHANGE = "password_change"
+    HARVEST_ADDED = "harvest_added"
+    HARVEST_UPDATED = "harvest_updated"
+    HARVEST_DELETED = "harvest_deleted"
+    PEST_REPORT_ADDED = "pest_report_added"
+    PEST_REPORT_UPDATED = "pest_report_updated"
+    COMPLAINT_ADDED = "complaint_added"
+    COMPLAINT_UPDATED = "complaint_updated"
+    SETTINGS_CHANGED = "settings_changed"
+    LANGUAGE_CHANGED = "language_changed"
+    THEME_CHANGED = "theme_changed"
+
+
+class ActivityStatus(str, enum.Enum):
+    SUCCESS = "success"
+    FAILED = "failed"
+    PENDING = "pending"
+# =========================
+# ACTIVITY HISTORY MODEL
+# =========================
+class ActivityHistory(Base):
+    __tablename__ = "activity_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    activity_type = Column(String(50), nullable=False, index=True)
+    description = Column(Text, nullable=False)
+
+    # ✅ FIXED HERE
+    activity_metadata = Column(JSON, default=dict)
+
+    status = Column(String(20), default="success")
+
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(Text, nullable=True)
+    device = Column(String(100), nullable=True)
+
+    created_at = Column(DateTime(timezone=True),
+                        server_default=func.now(),
+                        nullable=False,
+                        index=True)
+
+    updated_at = Column(DateTime(timezone=True),
+                        onupdate=func.now())
+
+    user = relationship("User", back_populates="activities")
+
+    __table_args__ = (
+        Index('idx_user_activity_created',
+              'user_id',
+              'activity_type',
+              'created_at'),
+        Index('idx_user_created',
+              'user_id',
+              'created_at'),
+    )
+
+class Report(Base):
+    __tablename__ = "reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    program = Column(String(255))
+    type = Column(String(50))  # complaint, feedback, incident
+    description = Column(Text)
+    status = Column(String(50), default="pending")  # pending, resolved, rejected
+    priority = Column(String(50), default="normal")  # low, normal, high, critical
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    # Relationship
+    user_id = Column(Integer, ForeignKey("users.id"))
+    submitted_by = relationship("User")
