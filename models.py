@@ -64,7 +64,6 @@ class User(Base):
         cascade="all, delete"
     )
 
-
 class Program(Base):
     __tablename__ = "programs"
 
@@ -75,10 +74,18 @@ class Program(Base):
     district = Column(String(255), nullable=False)
     goal = Column(Float, default=0)
     raised = Column(Float, default=0)
-    status = Column(String(100))
-
-
-
+    status = Column(String(100), default="Funding Open")
+    
+    # New fields that match your ALTER TABLE statements
+    icon = Column(String(50), default="seedling")
+    start_date = Column(String(50), nullable=True)
+    end_date = Column(String(50), nullable=True)
+    farmers = Column(Integer, default=0)
+    progress = Column(Integer, default=0)
+    
+    # Timestamp fields matching your SQL
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
 class Donation(Base):
     __tablename__ = "donations"
 

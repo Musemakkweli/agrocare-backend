@@ -22,7 +22,7 @@ import random
 import httpx
 from typing import Optional
 from dotenv import load_dotenv
-from models import AIChatHistory, Complaint, ComplaintStatus, User
+from models import AIChatHistory, Complaint, ComplaintStatus, Report, User
 from services.activity_logger import log_activity
 load_dotenv()  # load variables from .env
 
@@ -618,6 +618,7 @@ def approve_user(user_id: int, db: Session = Depends(get_db)):
     db.refresh(user)
 
     return user
+
  # =====================================
 # PROGRAMS API
 # =====================================
@@ -642,13 +643,31 @@ def get_program(program_id: int, db: Session = Depends(get_db)):
 # CREATE program
 @app.post("/api/programs", response_model=schemas.ProgramOut)
 def create_program(program: schemas.ProgramCreate, db: Session = Depends(get_db)):
-    new_program = models.Program(**program.dict())
+    # Convert to dict
+    program_data = program.dict()
+    
+    # Calculate initial progress
+    if program_data.get('goal', 0) > 0 and program_data.get('raised', 0) > 0:
+        program_data['progress'] = min(int((program_data['raised'] / program_data['goal']) * 100), 100)
+    else:
+        program_data['progress'] = 0
+    
+    # Set default icon if not provided
+    if not program_data.get('icon'):
+        program_data['icon'] = 'seedling'
+    
+    # Set default status if not provided
+    if not program_data.get('status'):
+        program_data['status'] = 'Funding Open'
+    
+    new_program = models.Program(**program_data)
 
     db.add(new_program)
     db.commit()
     db.refresh(new_program)
 
     return new_program
+
 
 
 # UPDATE program
@@ -2452,4 +2471,46 @@ def get_user_activities(user_id: int, db: Session = Depends(get_db)):
 
     return activities
 
+@app.post("/reports", response_model=schemas.ReportResponse)
+def create_report(report: schemas.ReportCreate, db: Session = Depends(get_db)):
 
+    new_report = Report(
+        program=report.program,
+        type=report.type,
+        description=report.description,
+        priority=report.priority,
+        status="pending",
+        user_id=report.user_id   
+    )
+
+    db.add(new_report)
+    db.commit()
+    db.refresh(new_report)
+
+    return new_report
+# Add this to your main.py or routes file
+
+@app.get("/reports", response_model=List[schemas.ReportResponse])
+def get_reports(
+    skip: int = 0, 
+    limit: int = 100, 
+    type: Optional[str] = None,
+    status: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(Report)
+    
+    # Apply filters
+    if type:
+        query = query.filter(Report.type == type)
+    if status:
+        query = query.filter(Report.status == status)
+    if start_date:
+        query = query.filter(Report.created_at >= start_date)
+    if end_date:
+        query = query.filter(Report.created_at <= end_date)
+    
+    reports = query.offset(skip).limit(limit).all()
+    return reports

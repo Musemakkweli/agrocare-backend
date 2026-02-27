@@ -124,7 +124,9 @@ class LoginResponseWithMessage(BaseModel):
     token_type: str = "bearer"
     user: UserResponse
 
+from datetime import datetime
 
+# Program schemas
 class ProgramBase(BaseModel):
     title: str
     description: Optional[str] = None
@@ -132,19 +134,22 @@ class ProgramBase(BaseModel):
     district: Optional[str] = None
     goal: float
     raised: float = 0
-    status: Optional[str] = "active"
-
+    status: str = "Funding Open"  # Changed from "active" to match design
+    icon: str = "seedling"  # New field for icon
+    start_date: Optional[str] = None  # New field
+    end_date: Optional[str] = None  # New field
+    farmers: int = 0  # New field for number of farmers
+    progress: int = 0  # New field for progress percentage
 
 class ProgramCreate(ProgramBase):
     pass
 
-
 class ProgramOut(ProgramBase):
     id: int
-
+    created_at: Optional[datetime] = None
+    
     class Config:
         from_attributes = True
-
 
 # -------------------------
 # Base donation info
@@ -679,7 +684,7 @@ class ReportCreate(BaseModel):
     type: str  # complaint, feedback, incident
     description: str
     priority: Optional[str] = "normal"  # low, normal, high, critical
-
+    user_id: Optional[int] = Field(None)
     class Config:
         from_attributes = True
         json_schema_extra = {
@@ -690,35 +695,25 @@ class ReportCreate(BaseModel):
                 "priority": "high"
             }
         }
+# In your schemas.py
+from pydantic import BaseModel
+from typing import Optional, List
+from datetime import datetime
 
 class ReportResponse(BaseModel):
     id: int
     program: str
     type: str
     description: str
+    priority: Optional[str] = "normal"
     status: str
-    priority: Optional[str]
-    created_at: datetime
-    submitted_by: SubmittedBy
-
+    user_id: Optional[int] = None
+    created_at: Optional[datetime] = None
+    resolution_notes: Optional[str] = None
+    attachments: Optional[List[str]] = None
+    
     class Config:
         from_attributes = True
-        json_schema_extra = {
-            "example": {
-                "id": 1,
-                "program": "Maize Pest Control Fund",
-                "type": "complaint",
-                "description": "Pests are affecting maize crops in Huye District.",
-                "status": "pending",
-                "priority": "high",
-                "created_at": "2024-01-27T10:30:00Z",
-                "submitted_by": {
-                    "full_name": "John Farmer",
-                    "role": "farmer"
-                }
-            }
-        }
-
 class ReportUpdate(BaseModel):
     program: Optional[str] = None
     type: Optional[str] = None
