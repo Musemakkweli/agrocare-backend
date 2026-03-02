@@ -1,4 +1,5 @@
 from random import random
+import uuid 
 import os
 import time
 from fastapi.responses import JSONResponse   
@@ -2488,7 +2489,7 @@ def create_report(report: schemas.ReportCreate, db: Session = Depends(get_db)):
     db.refresh(new_report)
 
     return new_report
-# Add this to your main.py or routes file
+# reports (admin endpoint with filters)
 
 @app.get("/reports", response_model=List[schemas.ReportResponse])
 def get_reports(
@@ -2514,3 +2515,529 @@ def get_reports(
     
     reports = query.offset(skip).limit(limit).all()
     return reports
+from sqlalchemy import func
+from sqlalchemy.orm import aliased
+
+@app.get("/farmers", response_model=List[schemas.FarmerResponse])
+def get_farmers(
+    skip: int = 0, 
+    limit: int = 100, 
+    search: Optional[str] = None,
+    district: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    # Query farmers with their complaint counts
+    farmers = db.query(
+        User.id,
+        User.full_name.label('name'),
+        User.phone,
+        User.district.label('location'),
+        User.is_approved.label('status'),
+        func.count(Complaint.id).label('complaints')
+    ).outerjoin(
+        Complaint, 
+        Complaint.created_by == User.id  # Using created_by as the foreign key
+    ).filter(
+        User.role == 'farmer'
+    ).group_by(
+        User.id
+    )
+    
+    # Apply search filter
+    if search:
+        search_filter = f"%{search}%"
+        farmers = farmers.filter(
+            (User.full_name.ilike(search_filter)) |
+            (User.phone.ilike(search_filter)) |
+            (User.district.ilike(search_filter))
+        )
+    
+    # Apply district filter
+    if district:
+        farmers = farmers.filter(User.district == district)
+    
+    # Apply pagination
+    farmers = farmers.offset(skip).limit(limit).all()
+    
+    # Convert to response format
+    result = []
+    for farmer in farmers:
+        result.append({
+            "id": farmer.id,
+            "name": farmer.name,
+            "phone": farmer.phone or "",  # Handle None
+            "location": farmer.location or "",  # Handle None
+            "status": "Active" if farmer.status else "Inactive",
+            "complaints": farmer.complaints or 0  # Handle None
+        })
+    
+    return result
+from fastapi import HTTPException, status
+# assigning complaints to agronomists
+from services.notification_service import NotificationService
+from datetime import datetime
+
+@app.post("/complaints/assign", response_model=schemas.ComplaintAssignResponse)
+def assign_complaint(
+    assignment: schemas.ComplaintAssignRequest,
+    db: Session = Depends(get_db)
+):
+    # 1. Check if complaint exists
+    complaint = db.query(Complaint).filter(Complaint.id == assignment.complaint_id).first()
+    if not complaint:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail=f"Complaint with id {assignment.complaint_id} not found"
+        )
+    
+    # 2. Check if agronomist exists and has the correct role
+    agronomist = db.query(User).filter(
+        User.id == assignment.agronomist_id,
+        User.role == 'agronomist'
+    ).first()
+    
+    if not agronomist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail=f"Agronomist with id {assignment.agronomist_id} not found"
+        )
+    
+    # 3. Check if complaint is already assigned
+    reassigned = False
+    previous_agronomist_name = None
+    if complaint.assigned_to is not None:
+        previous_agronomist = db.query(User).filter(User.id == complaint.assigned_to).first()
+        if previous_agronomist:
+            previous_agronomist_name = previous_agronomist.full_name
+            reassigned = True
+            print(f"Reassigning complaint from {previous_agronomist.full_name} to {agronomist.full_name}")
+    
+    # 4. Assign the complaint to the agronomist with timestamp
+    complaint.assigned_to = assignment.agronomist_id
+    complaint.assigned_at = datetime.now()  # Add timestamp if you have this field
+    
+    # 5. Save to database
+    db.commit()
+    db.refresh(complaint)
+
+    # 6. ========== CREATE NOTIFICATIONS ==========
+    
+    # 6.1 Notify the NEW agronomist
+    NotificationService.create_notification(
+        db=db,
+        user_id=assignment.agronomist_id,
+        role="agronomist",
+        title="📋 New Complaint Assigned",
+        message=f"A new complaint '{complaint.title}' has been assigned to you. Please review and take action.",
+        type="complaint_assigned",
+        related_id=complaint.id,
+        priority="high",
+        action_url=f"/agronomist/complaints/{complaint.id}",
+        extra_data={
+            "complaint_id": complaint.id,
+            "complaint_title": complaint.title,
+            "complaint_type": complaint.type,
+            "location": complaint.location,
+            "assigned_by": "Leader"  # You can get the actual leader name if available
+        }
+    )
+
+    # 6.2 Notify the FARMER who created the complaint
+    farmer = db.query(User).filter(User.id == complaint.created_by).first()
+    if farmer:
+        notification_message = f"Your complaint '{complaint.title}' has been assigned to Agronomist {agronomist.full_name}"
+        if reassigned:
+            notification_message = f"Your complaint '{complaint.title}' has been reassigned from {previous_agronomist_name} to Agronomist {agronomist.full_name}"
+        
+        NotificationService.create_notification(
+            db=db,
+            user_id=complaint.created_by,
+            role=farmer.role,
+            title="👨‍🌾 Complaint Assignment Update",
+            message=notification_message,
+            type="complaint_assigned",
+            related_id=complaint.id,
+            priority="normal",
+            action_url=f"/farmer/complaints/{complaint.id}",
+            extra_data={
+                "complaint_id": complaint.id,
+                "complaint_title": complaint.title,
+                "agronomist_name": agronomist.full_name,
+                "reassigned": reassigned
+            }
+        )
+
+    # 6.3 If this is a reassignment, notify the PREVIOUS agronomist (if any)
+    if reassigned and previous_agronomist:
+        NotificationService.create_notification(
+            db=db,
+            user_id=complaint.assigned_to,  # This is the previous agronomist's ID
+            role="agronomist",
+            title="🔄 Complaint Reassigned",
+            message=f"Complaint '{complaint.title}' has been reassigned to {agronomist.full_name}",
+            type="complaint_reassigned",
+            related_id=complaint.id,
+            priority="normal",
+            action_url=f"/agronomist/complaints",
+            extra_data={
+                "complaint_id": complaint.id,
+                "complaint_title": complaint.title,
+                "new_agronomist": agronomist.full_name
+            }
+        )
+
+    # 6.4 Notify all ADMINS about the assignment (optional)
+    admins = db.query(User).filter(User.role == "admin").all()
+    for admin in admins:
+        NotificationService.create_notification(
+            db=db,
+            user_id=admin.id,
+            role="admin",
+            title="📢 Complaint Assignment",
+            message=f"Complaint '{complaint.title}' has been assigned to Agronomist {agronomist.full_name}",
+            type="admin_alert",
+            related_id=complaint.id,
+            priority="low",
+            action_url=f"/admin/complaints/{complaint.id}",
+            extra_data={
+                "complaint_id": complaint.id,
+                "complaint_title": complaint.title,
+                "agronomist_name": agronomist.full_name,
+                "farmer_name": farmer.full_name if farmer else "Unknown"
+            }
+        )
+
+    # 7. Return success message
+    response_message = "Complaint assigned successfully"
+    if reassigned:
+        response_message = f"Complaint reassigned from {previous_agronomist_name} to {agronomist.full_name}"
+    
+    return schemas.ComplaintAssignResponse(
+        message=response_message,
+        complaint_id=complaint.id,
+        assigned_to=agronomist.full_name,
+        status=complaint.status
+    )
+# assigned complaints for agronomists with farmer inf
+@app.get("/agronomists", response_model=List[schemas.AgronomistResponse])
+def get_agronomists(
+    skip: int = 0,
+    limit: int = 100,
+    search: Optional[str] = None,
+    district: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    # Query users with role 'agronomist'
+    query = db.query(User).filter(User.role == 'agronomist')
+    
+    # Apply filters
+    if search:
+        search_filter = f"%{search}%"
+        query = query.filter(
+            (User.full_name.ilike(search_filter)) |
+            (User.email.ilike(search_filter)) |
+            (User.phone.ilike(search_filter)) |
+            (User.district.ilike(search_filter)) |
+            (User.expertise.ilike(search_filter))
+        )
+    
+    if district:
+        query = query.filter(User.district == district)
+    
+    # Get paginated agronomists
+    agronomists = query.offset(skip).limit(limit).all()
+    
+    result = []
+    for agronomist in agronomists:
+        # Get all complaints assigned to this agronomist
+        assigned_complaints = db.query(Complaint).filter(
+            Complaint.assigned_to == agronomist.id
+        ).all()
+        
+        # Calculate statistics
+        total_assigned = len(assigned_complaints)
+        resolved = sum(1 for c in assigned_complaints if c.status == "Resolved")
+        pending = sum(1 for c in assigned_complaints if c.status in ["Pending", "On Hold"])
+        
+        # Format assigned complaints with farmer info
+        complaints_list = []
+        for complaint in assigned_complaints:
+            # Get farmer who created the complaint
+            farmer = db.query(User).filter(User.id == complaint.created_by).first()
+            complaints_list.append({
+                "id": complaint.id,
+                "title": complaint.title,
+                "type": complaint.type,
+                "location": complaint.location,
+                "status": complaint.status,
+                "created_at": complaint.created_at,
+                "farmer_name": farmer.full_name if farmer else "Unknown",
+                "farmer_phone": farmer.phone if farmer else None
+            })
+        
+        # Build agronomist response
+        agronomist_data = {
+            "id": agronomist.id,
+            "name": agronomist.full_name,
+            "email": agronomist.email,
+            "phone": agronomist.phone or "",
+            "district": agronomist.district or "",
+            "expertise": agronomist.expertise or "",
+            "license": agronomist.license or "",
+            "is_approved": agronomist.is_approved,
+            "total_assigned_complaints": total_assigned,
+            "resolved_complaints": resolved,
+            "pending_complaints": pending,
+            "assigned_complaints": complaints_list
+        }
+        result.append(agronomist_data)
+    
+    return result
+@app.put("/notifications/{notification_id}/read")
+def mark_notification_read(
+    notification_id: int,
+    db: Session = Depends(get_db)
+):
+    """Mark a single notification as read"""
+    notification = db.query(models.Notification).filter(models.Notification.id == notification_id).first()
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    
+    notification.is_read = True
+    db.commit()
+    
+    return {"message": "Notification marked as read"}
+
+@app.post("/notifications/mark-all-read")
+def mark_all_notifications_read(
+    request: dict,
+    db: Session = Depends(get_db)
+):
+    """Mark all notifications as read for a user"""
+    user_id = request.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id required")
+    
+    db.query(models.Notification).filter(
+        models.Notification.user_id == user_id,
+        models.Notification.is_read == False
+    ).update({"is_read": True})
+    
+    db.commit()
+    
+    return {"message": "All notifications marked as read"}
+
+
+
+@app.post("/farmer/send-followup")
+async def send_farmer_followup(
+    complaint_id: int = Form(...),
+    farmer_id: int = Form(...),
+    message: str = Form(None),
+    image: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint for farmer to send a follow-up message with optional image
+    """
+    try:
+        # 1. Verify complaint exists and belongs to this farmer
+        complaint = db.query(models.Complaint).filter(
+            models.Complaint.id == complaint_id,
+            models.Complaint.created_by == farmer_id
+        ).first()
+        
+        if not complaint:
+            raise HTTPException(
+                status_code=404,
+                detail="Complaint not found or you don't have permission"
+            )
+        
+        # 2. Check if complaint is assigned to an agronomist
+        if not complaint.assigned_to:
+            raise HTTPException(
+                status_code=400,
+                detail="Complaint not assigned to any agronomist yet"
+            )
+        
+        # 3. Upload image to Supabase if provided
+        image_url = None
+        if image:
+            # Read image file
+            image_content = await image.read()
+            
+            # Generate unique filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            unique_id = str(uuid.uuid4())[:8]
+            filename = f"followups/{farmer_id}/{complaint_id}/{timestamp}_{unique_id}.jpg"
+            
+            # Upload to Supabase
+            supabase.storage.from_(BUCKET_NAME).upload(
+                path=filename,
+                file=image_content,
+                file_options={"content-type": image.content_type}
+            )
+            
+            # Get public URL
+            image_url = supabase.storage.from_(BUCKET_NAME).get_public_url(filename)
+        
+        # 4. Save follow-up to database - USE 'image' INSTEAD OF 'image_url'
+        followup = models.FollowUpMessage(
+            complaint_id=complaint_id,
+            farmer_id=farmer_id,
+            agronomist_id=complaint.assigned_to,
+            message=message,
+            image=image_url,  # Changed from image_url to image
+            status="pending"
+        )
+        
+        db.add(followup)
+        db.commit()
+        db.refresh(followup)
+        
+        # 5. Get farmer name for notification
+        farmer = db.query(models.User).filter(models.User.id == farmer_id).first()
+        farmer_name = farmer.full_name if farmer else f"Farmer #{farmer_id}"
+        
+        # 6. Create notification for agronomist
+        NotificationService.create_notification(
+            db=db,
+            user_id=complaint.assigned_to,
+            role="agronomist",
+            title="📨 New Follow-up from Farmer",
+            message=f"Farmer {farmer_name} sent a follow-up about '{complaint.title}'",
+            type="followup_received",
+            related_id=complaint.id,
+            priority="high",
+            action_url=f"/agronomist/complaints/{complaint.id}",
+            extra_data={
+                "complaint_id": complaint.id,
+                "complaint_title": complaint.title,
+                "farmer_name": farmer_name,
+                "has_image": image_url is not None,
+                "followup_id": followup.id
+            }
+        )
+        
+        # 7. Return success response
+        return {
+            "success": True,
+            "message": "Follow-up sent successfully",
+            "data": {
+                "followup_id": followup.id,
+                "complaint_id": complaint_id,
+                "complaint_title": complaint.title,
+                "farmer_id": farmer_id,
+                "farmer_name": farmer_name,
+                "agronomist_id": complaint.assigned_to,
+                "message": message,
+                "image_url": image_url,  # Keep as image_url in response
+                "status": "pending",
+                "created_at": followup.created_at.isoformat()
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send follow-up: {str(e)}"
+        )
+# ================= GET FOLLOW-UP ENDPOINTS =================
+
+@app.get("/followup/agronomist/{agronomist_id}", response_model=List[schemas.FollowUpMessageResponse])
+def get_agronomist_followups(
+    agronomist_id: int,
+    status: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """Get all follow-ups for a specific agronomist"""
+    # Verify agronomist exists
+    agronomist = db.query(models.User).filter(
+        models.User.id == agronomist_id,
+        models.User.role == 'agronomist'
+    ).first()
+    
+    if not agronomist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agronomist not found"
+        )
+    
+    # Query follow-ups
+    query = db.query(models.FollowUpMessage).filter(
+        models.FollowUpMessage.agronomist_id == agronomist_id
+    )
+    
+    if status:
+        query = query.filter(models.FollowUpMessage.status == status)
+    
+    followups = query.order_by(
+        models.FollowUpMessage.status == 'pending',
+        models.FollowUpMessage.created_at.desc()
+    ).offset(skip).limit(limit).all()
+    
+    # Enhance with farmer and complaint info
+    result = []
+    for f in followups:
+        farmer = db.query(models.User).filter(models.User.id == f.farmer_id).first()
+        complaint = db.query(models.Complaint).filter(models.Complaint.id == f.complaint_id).first()
+        result.append({
+            "id": f.id,
+            "complaint_id": f.complaint_id,
+            "farmer_id": f.farmer_id,
+            "agronomist_id": f.agronomist_id,
+            "farmer_name": farmer.full_name if farmer else "Unknown Farmer",
+            "complaint_title": complaint.title if complaint else "Unknown Complaint",
+            "message": f.message,
+            "image_url": f.image,  # CHANGED: from f.image_url to f.image
+            "status": f.status,
+            "created_at": f.created_at,
+            "read_at": f.read_at
+        })
+    
+    return result
+@app.get("/followup/farmer/{farmer_id}", response_model=List[schemas.FollowUpMessageResponse])
+def get_farmer_followups(
+    farmer_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get all follow-ups sent by a farmer"""
+    farmer = db.query(models.User).filter(
+        models.User.id == farmer_id,
+        models.User.role == 'farmer'
+    ).first()
+    
+    if not farmer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Farmer not found"
+        )
+    
+    followups = db.query(models.FollowUpMessage).filter(
+        models.FollowUpMessage.farmer_id == farmer_id
+    ).order_by(models.FollowUpMessage.created_at.desc()).all()
+    
+    result = []
+    for f in followups:
+        complaint = db.query(models.Complaint).filter(models.Complaint.id == f.complaint_id).first()
+        agronomist = db.query(models.User).filter(models.User.id == f.agronomist_id).first()
+        result.append({
+            "id": f.id,
+            "complaint_id": f.complaint_id,
+            "farmer_id": f.farmer_id,
+            "agronomist_id": f.agronomist_id,
+            "farmer_name": farmer.full_name,
+            "agronomist_name": agronomist.full_name if agronomist else "Unknown Agronomist",
+            "complaint_title": complaint.title if complaint else "Unknown Complaint",
+            "message": f.message,
+            "image_url": f.image,  # CHANGED: from f.image_url to f.image
+            "status": f.status,
+            "created_at": f.created_at,
+            "read_at": f.read_at
+        })
+    
+    return result

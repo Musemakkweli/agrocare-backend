@@ -163,6 +163,8 @@ class Complaint(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
 
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
+    agronomist = relationship("User", foreign_keys=[assigned_to])
 
 
 class WeatherAlert(Base):
@@ -357,3 +359,22 @@ class Report(Base):
     # Relationship
     user_id = Column(Integer, ForeignKey("users.id"))
     submitted_by = relationship("User")
+# Add to your models.py or main.py
+
+class FollowUpMessage(Base):
+    __tablename__ = "follow_up_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    complaint_id = Column(Integer, ForeignKey("complaints.id"), nullable=False)
+    farmer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    agronomist_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    message = Column(Text, nullable=True)
+    image = Column(String, nullable=True)  # Store image path/URL
+    status = Column(String, default="pending")  # pending, read, resolved
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    read_at = Column(TIMESTAMP, nullable=True)
+
+    # Relationships
+    complaint = relationship("Complaint", foreign_keys=[complaint_id])
+    farmer = relationship("User", foreign_keys=[farmer_id])
+    agronomist = relationship("User", foreign_keys=[agronomist_id])

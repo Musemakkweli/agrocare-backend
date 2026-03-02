@@ -723,3 +723,84 @@ class ReportUpdate(BaseModel):
 
     class Config:
         from_attributes = True
+# In schemas.py
+class FarmerResponse(BaseModel):
+    id: int
+    name: str
+    phone: str
+    location: str
+    status: str  # This will be "Active" or "Inactive"
+    complaints: int
+    
+    class Config:
+        from_attributes = True
+
+class ComplaintAssignRequest(BaseModel):
+    complaint_id: int
+    agronomist_id: int
+    
+    class Config:
+        from_attributes = True
+
+# Optional: Response schema for assignment
+class ComplaintAssignResponse(BaseModel):
+    message: str
+    complaint_id: int
+    assigned_to: str
+    status: str
+    
+    class Config:
+        from_attributes = True        
+
+
+class AssignedComplaintSchema(BaseModel):
+    id: int
+    title: str
+    type: str
+    location: str
+    status: str
+    created_at: datetime
+    farmer_name: str
+    farmer_phone: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+class AgronomistResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+    phone: Optional[str] = None
+    district: Optional[str] = None
+    expertise: Optional[str] = None
+    license: Optional[str] = None
+    is_approved: bool
+    total_assigned_complaints: int
+    resolved_complaints: int
+    pending_complaints: int
+    assigned_complaints: List[AssignedComplaintSchema] = []
+    
+    class Config:
+        from_attributes = True
+
+
+class FollowUpMessageCreate(BaseModel):
+    complaint_id: int
+    message: Optional[str] = None
+    image: Optional[str] = None
+
+class FollowUpMessageResponse(BaseModel):
+    id: int
+    complaint_id: int
+    farmer_id: int
+    agronomist_id: int
+    farmer_name: str
+    complaint_title: str
+    message: Optional[str] = None
+    image: Optional[str] = None
+    status: str
+    created_at: datetime
+    read_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
