@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, root_validator,Field, field_validator
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Dict
 from datetime import datetime, date
 from models import ComplaintStatus
 from datetime import datetime
@@ -801,6 +801,171 @@ class FollowUpMessageResponse(BaseModel):
     status: str
     created_at: datetime
     read_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+        
+class ComplaintWithFarmerInfo(ComplaintBase):
+    farmer_name: str
+    farmer_phone: Optional[str] = None
+    farmer_district: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+# Add these Pydantic models to your schemas.py
+
+from pydantic import BaseModel
+from typing import List, Optional, Any
+from datetime import datetime
+
+# Impact Metric Schemas
+class ImpactMetricBase(BaseModel):
+    category: str
+    value: int
+    change: int
+    target: int
+    color: str
+    year: int
+
+class ImpactMetricCreate(ImpactMetricBase):
+    donor_id: int
+
+class ImpactMetricOut(ImpactMetricBase):
+    id: int
+    donor_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Yearly Impact Schemas
+class YearlyImpactBase(BaseModel):
+    year: str
+    beneficiaries: int
+    programs: int
+    donations: int
+    yield_increase: int
+
+class YearlyImpactCreate(YearlyImpactBase):
+    donor_id: int
+
+class YearlyImpactOut(YearlyImpactBase):
+    id: int
+    donor_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Program Impact Schemas
+class ProgramImpactBase(BaseModel):
+    program_id: int
+    program_name: str
+    beneficiaries: int
+    amount: int
+    impact_metrics: Dict[str, Any]
+    success_stories: List[str]
+    status: str
+
+class ProgramImpactCreate(ProgramImpactBase):
+    donor_id: int
+
+class ProgramImpactOut(ProgramImpactBase):
+    id: int
+    donor_id: int
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+# Environmental Impact Schemas
+class EnvironmentalImpactBase(BaseModel):
+    trees_planted: int
+    soil_health_improved: str
+    water_conservation: str
+    carbon_offset: str
+    organic_farms: int
+    year: int
+
+class EnvironmentalImpactCreate(EnvironmentalImpactBase):
+    donor_id: int
+
+class EnvironmentalImpactOut(EnvironmentalImpactBase):
+    id: int
+    donor_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Community Story Schemas
+class CommunityStoryBase(BaseModel):
+    farmer_name: str
+    village: str
+    quote: str
+    image: Optional[str] = None
+    program: str
+    impact: str
+
+class CommunityStoryCreate(CommunityStoryBase):
+    donor_id: int
+
+class CommunityStoryOut(CommunityStoryBase):
+    id: int
+    donor_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# SDG Contribution Schemas
+class SDGContributionBase(BaseModel):
+    goal: str
+    contribution: int
+    icon: str
+    year: int
+
+class SDGContributionCreate(SDGContributionBase):
+    donor_id: int
+
+class SDGContributionOut(SDGContributionBase):
+    id: int
+    donor_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# ROI Data Schemas
+class ROIBase(BaseModel):
+    financial: str
+    social: str
+    environmental: str
+    sustainability: str
+    year: int
+
+class ROICreate(ROIBase):
+    donor_id: int
+
+class ROIOut(ROIBase):
+    id: int
+    donor_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Donor Impact Summary Schema (for the comprehensive endpoint)
+class DonorImpactSummary(BaseModel):
+    summary: Dict[str, Any]
+    keyMetrics: List[ImpactMetricOut]
+    yearlyImpact: List[YearlyImpactOut]
+    programImpact: List[ProgramImpactOut]
+    environmentalImpact: EnvironmentalImpactOut
+    communityImpact: Dict[str, List[CommunityStoryOut]]
+    sdgContributions: List[SDGContributionOut]
+    roi: ROIOut
 
     class Config:
         from_attributes = True

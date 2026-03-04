@@ -620,7 +620,6 @@ def approve_user(user_id: int, db: Session = Depends(get_db)):
 
     return user
 
- # =====================================
 # PROGRAMS API
 # =====================================
 
@@ -3041,3 +3040,321 @@ def get_farmer_followups(
         })
     
     return result
+
+@app.get("/agronomists/{agronomist_id}/complaints")
+def get_agronomist_complaints(
+    agronomist_id: int,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    # Check if agronomist exists
+    agronomist = db.query(User).filter(
+        User.id == agronomist_id,
+        User.role == 'agronomist'
+    ).first()
+    
+    if not agronomist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agronomist not found"
+        )
+    
+    # Query complaints assigned to this agronomist
+    query = db.query(Complaint).filter(Complaint.assigned_to == agronomist_id)
+    
+    # Filter by status if provided
+    if status:
+        query = query.filter(Complaint.status == status)
+    
+    complaints = query.all()
+    
+    # Format complaints with farmer info
+    result = []
+    for complaint in complaints:
+        farmer = db.query(User).filter(User.id == complaint.created_by).first()
+        result.append({
+            "id": complaint.id,
+            "title": complaint.title,
+            "type": complaint.type,
+            "description": complaint.description,
+            "location": complaint.location,
+            "status": complaint.status,
+            "created_at": complaint.created_at,
+            # "assigned_at": complaint.assigned_at,  # REMOVE THIS LINE
+            "image": complaint.image,
+            "farmer_name": farmer.full_name if farmer else "Unknown",
+            "farmer_phone": farmer.phone if farmer else None,
+            "farmer_district": farmer.district if farmer else None
+        })
+    
+    return result
+
+# Get single donation by ID
+@app.get("/api/donations/{donation_id}", response_model=schemas.DonationOut)
+def get_donation(donation_id: int, db: Session = Depends(get_db)):
+    donation = db.query(models.Donation).filter(models.Donation.id == donation_id).first()
+    if not donation:
+        raise HTTPException(status_code=404, detail="Donation not found")
+    return donation
+
+# GET all programs
+@app.get("/api/programs", response_model=list[schemas.ProgramOut])
+def get_programs(db: Session = Depends(get_db)):
+    return db.query(models.Program).all()
+
+@app.get("/api/donors/{donor_id}/impact/programs", response_model=List[schemas.ProgramImpactOut])
+def get_donor_program_impact(donor_id: int, db: Session = Depends(get_db)):
+    """
+    Get impact data for all programs a donor has supported
+    """
+    # First check if donor exists
+    donor = db.query(models.User).filter(models.User.id == donor_id).first()
+    print(f"Donor exists: {donor is not None}")
+    if donor:
+        print(f"Donor found: {donor.id} - {donor.full_name}")
+    
+    # Get all program impacts to see what's in the table
+    all_impacts = db.query(models.ProgramImpact).all()
+    print(f"Total impacts in table: {len(all_impacts)}")
+    for imp in all_impacts:
+        print(f"Impact: id={imp.id}, donor_id={imp.donor_id}, program={imp.program_name}")
+    
+    # Get impacts for this specific donor
+    program_impacts = db.query(models.ProgramImpact).filter(
+        models.ProgramImpact.donor_id == donor_id
+    ).all()
+    print(f"Impacts for donor {donor_id}: {len(program_impacts)}")
+    
+    return program_impacts
+
+# Create or update program impact for a donor
+@app.post("/api/donors/{donor_id}/impact/programs", response_model=schemas.ProgramImpactOut)
+def create_or_update_program_impact(
+    donor_id: int, 
+    impact_data: schemas.ProgramImpactCreate, 
+    db: Session = Depends(get_db)
+):
+    """
+    Create or update program impact for a donor
+    This would be called when a donation is made
+    """
+    # Check if donor exists
+    donor = db.query(models.User).filter(models.User.id == donor_id).first()
+    if not donor:
+        raise HTTPException(status_code=404, detail="Donor not found")
+    
+    # Check if program exists
+    program = db.query(models.Program).filter(models.Program.id == impact_data.program_id).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Program not found")
+    
+    # Check if there's already an impact record for this donor and program
+    existing_impact = db.query(models.ProgramImpact).filter(
+        models.ProgramImpact.donor_id == donor_id,
+        models.ProgramImpact.program_id == impact_data.program_id
+    ).first()
+    
+    if existing_impact:
+        # Update existing record
+        existing_impact.beneficiaries = impact_data.beneficiaries
+        existing_impact.amount += impact_data.amount  # Add to existing amount
+        existing_impact.impact_metrics = impact_data.impact_metrics
+        existing_impact.success_stories = impact_data.success_stories
+        existing_impact.status = impact_data.status
+        existing_impact.updated_at = func.now()
+        
+        db.commit()
+        db.refresh(existing_impact)
+        return existing_impact
+    else:
+        # Create new record
+        new_impact = models.ProgramImpact(
+            donor_id=donor_id,
+            program_id=impact_data.program_id,
+            program_name=impact_data.program_name,
+            beneficiaries=impact_data.beneficiaries,
+            amount=impact_data.amount,
+            impact_metrics=impact_data.impact_metrics,
+            success_stories=impact_data.success_stories,
+            status=impact_data.status
+        )
+        
+        db.add(new_impact)
+        db.commit()
+        db.refresh(new_impact)
+        return new_impact
+    
+@app.post("/api/donors/{donor_id}/impact/metrics", response_model=schemas.ImpactMetricOut)
+def create_or_update_impact_metric(
+    donor_id: int,
+    metric: schemas.ImpactMetricCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Create or update an impact metric for a donor
+    """
+    # Check if donor exists
+    donor = db.query(models.User).filter(models.User.id == donor_id).first()
+    if not donor:
+        raise HTTPException(status_code=404, detail="Donor not found")
+    
+    # Check if metric already exists for this donor, category, and year
+    existing = db.query(models.ImpactMetric).filter(
+        models.ImpactMetric.donor_id == donor_id,
+        models.ImpactMetric.category == metric.category,
+        models.ImpactMetric.year == metric.year
+    ).first()
+    
+    if existing:
+        # Update existing
+        existing.value = metric.value
+        existing.change = metric.change
+        existing.target = metric.target
+        existing.color = metric.color
+        db.commit()
+        db.refresh(existing)
+        return existing
+    else:
+        # Create new
+        new_metric = models.ImpactMetric(
+            donor_id=donor_id,
+            category=metric.category,
+            value=metric.value,
+            change=metric.change,
+            target=metric.target,
+            color=metric.color,
+            year=metric.year
+        )
+        db.add(new_metric)
+        db.commit()
+        db.refresh(new_metric)
+        return new_metric
+    
+    #
+@app.get("/api/donors/{donor_id}/impact/metrics", response_model=List[schemas.ImpactMetricOut])
+def get_donor_impact_metrics(
+    donor_id: int, 
+    timeframe: str = "year",  # year, quarter, month
+    db: Session = Depends(get_db)
+):
+    """
+    Get key metrics for a donor:
+    - Food Security
+    - Income Growth
+    - Sustainable Practices
+    - Women Empowerment
+    """
+    # Check if donor exists
+    donor = db.query(models.User).filter(models.User.id == donor_id).first()
+    if not donor:
+        raise HTTPException(status_code=404, detail="Donor not found")
+    
+    # Get current year
+    from datetime import datetime
+    current_year = datetime.now().year
+    
+    # Adjust year based on timeframe
+    if timeframe == "year":
+        year = current_year
+    elif timeframe == "quarter":
+        year = current_year  # You might want to adjust this logic
+    elif timeframe == "month":
+        year = current_year  # You might want to adjust this logic
+    else:  # all time - get most recent
+        year = current_year
+    
+    # Get metrics for this donor and year
+    metrics = db.query(models.ImpactMetric).filter(
+        models.ImpactMetric.donor_id == donor_id,
+        models.ImpactMetric.year == year
+    ).all()
+    
+    return metrics
+#
+@app.post("/api/donors/{donor_id}/impact/yearly", response_model=schemas.YearlyImpactOut)
+def create_or_update_yearly_impact(
+    donor_id: int,
+    yearly_data: schemas.YearlyImpactCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Create or update yearly impact data for a donor
+    """
+    # Check if donor exists
+    donor = db.query(models.User).filter(models.User.id == donor_id).first()
+    if not donor:
+        raise HTTPException(status_code=404, detail="Donor not found")
+    
+    # Check if record already exists for this donor and year
+    existing = db.query(models.YearlyImpact).filter(
+        models.YearlyImpact.donor_id == donor_id,
+        models.YearlyImpact.year == yearly_data.year
+    ).first()
+    
+    if existing:
+        # Update existing
+        existing.beneficiaries = yearly_data.beneficiaries
+        existing.programs = yearly_data.programs
+        existing.donations = yearly_data.donations
+        existing.yield_increase = yearly_data.yield_increase
+        db.commit()
+        db.refresh(existing)
+        return existing
+    else:
+        # Create new
+        new_yearly = models.YearlyImpact(
+            donor_id=donor_id,
+            year=yearly_data.year,
+            beneficiaries=yearly_data.beneficiaries,
+            programs=yearly_data.programs,
+            donations=yearly_data.donations,
+            yield_increase=yearly_data.yield_increase
+        )
+        db.add(new_yearly)
+        db.commit()
+        db.refresh(new_yearly)
+        return new_yearly
+#
+@app.post("/api/donors/{donor_id}/impact/yearly", response_model=schemas.YearlyImpactOut)
+def create_or_update_yearly_impact(
+    donor_id: int,
+    yearly_data: schemas.YearlyImpactCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Create or update yearly impact data for a donor
+    """
+    # Check if donor exists
+    donor = db.query(models.User).filter(models.User.id == donor_id).first()
+    if not donor:
+        raise HTTPException(status_code=404, detail="Donor not found")
+    
+    # Check if record already exists for this donor and year
+    existing = db.query(models.YearlyImpact).filter(
+        models.YearlyImpact.donor_id == donor_id,
+        models.YearlyImpact.year == yearly_data.year
+    ).first()
+    
+    if existing:
+        # Update existing
+        existing.beneficiaries = yearly_data.beneficiaries
+        existing.programs = yearly_data.programs
+        existing.donations = yearly_data.donations
+        existing.yield_increase = yearly_data.yield_increase
+        db.commit()
+        db.refresh(existing)
+        return existing
+    else:
+        # Create new
+        new_yearly = models.YearlyImpact(
+            donor_id=donor_id,
+            year=yearly_data.year,
+            beneficiaries=yearly_data.beneficiaries,
+            programs=yearly_data.programs,
+            donations=yearly_data.donations,
+            yield_increase=yearly_data.yield_increase
+        )
+        db.add(new_yearly)
+        db.commit()
+        db.refresh(new_yearly)
+        return new_yearly

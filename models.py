@@ -361,20 +361,147 @@ class Report(Base):
     submitted_by = relationship("User")
 # Add to your models.py or main.py
 
-class FollowUpMessage(Base):
-    __tablename__ = "follow_up_messages"
+
+# Add these to your models.py
+
+class DonorImpactSummary(Base):
+    __tablename__ = "donor_impact_summary"
 
     id = Column(Integer, primary_key=True, index=True)
-    complaint_id = Column(Integer, ForeignKey("complaints.id"), nullable=False)
-    farmer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    agronomist_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    message = Column(Text, nullable=True)
-    image = Column(String, nullable=True)  # Store image path/URL
-    status = Column(String, default="pending")  # pending, read, resolved
+    donor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    total_donated = Column(Integer, default=0)  # Total amount donated in RWF
+    total_beneficiaries = Column(Integer, default=0)
+    programs_supported = Column(Integer, default=0)
+    active_programs = Column(Integer, default=0)
+    communities_reached = Column(Integer, default=0)
+    districts = Column(JSON, default=[])  # Store as JSON array
+    total_acres = Column(Integer, default=0)
+    trees_planted = Column(Integer, default=0)
+    jobs_created = Column(Integer, default=0)
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    # Relationship
+    donor = relationship("User", foreign_keys=[donor_id])
+
+
+class ImpactMetric(Base):
+    __tablename__ = "impact_metrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    donor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    category = Column(String)  # Food Security, Income Growth, Sustainable Practices, Women Empowerment
+    value = Column(Integer)  # Current percentage
+    change = Column(Integer)  # Percentage change from last year
+    target = Column(Integer)  # Target percentage
+    color = Column(String, default="green")  # green, blue, emerald, purple
+    year = Column(Integer)
     created_at = Column(TIMESTAMP, server_default=func.now())
-    read_at = Column(TIMESTAMP, nullable=True)
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    # Relationship
+    donor = relationship("User", foreign_keys=[donor_id])
+
+
+class YearlyImpact(Base):
+    __tablename__ = "yearly_impact"
+
+    id = Column(Integer, primary_key=True, index=True)
+    donor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    year = Column(String, nullable=False)  # "2022", "2023", etc.
+    beneficiaries = Column(Integer, default=0)
+    programs = Column(Integer, default=0)
+    donations = Column(Integer, default=0)  # Amount in RWF
+    yield_increase = Column(Integer, default=0)  # Percentage
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    # Relationship
+    donor = relationship("User", foreign_keys=[donor_id])
+
+
+class ProgramImpact(Base):
+    __tablename__ = "program_impact"
+
+    id = Column(Integer, primary_key=True, index=True)
+    donor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    program_id = Column(Integer, ForeignKey("programs.id"), nullable=False)
+    program_name = Column(String, nullable=False)
+    beneficiaries = Column(Integer, default=0)
+    amount = Column(Integer, default=0)  # Amount donated in RWF
+    impact_metrics = Column(JSON, default={})  # Store as JSON: {"yieldIncrease": "85%", "incomeBoost": "120%", ...}
+    success_stories = Column(JSON, default=[])  # Store as JSON array
+    status = Column(String, default="active")  # active, completed
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    complaint = relationship("Complaint", foreign_keys=[complaint_id])
-    farmer = relationship("User", foreign_keys=[farmer_id])
-    agronomist = relationship("User", foreign_keys=[agronomist_id])
+    donor = relationship("User", foreign_keys=[donor_id])
+    program = relationship("Program", foreign_keys=[program_id])
+
+
+class EnvironmentalImpact(Base):
+    __tablename__ = "environmental_impact"
+
+    id = Column(Integer, primary_key=True, index=True)
+    donor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    trees_planted = Column(Integer, default=0)
+    soil_health_improved = Column(String, default="0%")  # Store as "65%"
+    water_conservation = Column(String, default="0%")  # Store as "40%"
+    carbon_offset = Column(String, default="0 tons")  # Store as "125 tons"
+    organic_farms = Column(Integer, default=0)
+    year = Column(Integer)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    # Relationship
+    donor = relationship("User", foreign_keys=[donor_id])
+
+
+class CommunityStory(Base):
+    __tablename__ = "community_stories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    donor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    farmer_name = Column(String, nullable=False)
+    village = Column(String, nullable=False)
+    quote = Column(Text, nullable=False)
+    image = Column(String, nullable=True)  # Store image path/URL
+    program = Column(String, nullable=False)  # Program name
+    impact = Column(String, nullable=False)  # e.g., "Tripled income"
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+    # Relationship
+    donor = relationship("User", foreign_keys=[donor_id])
+
+
+class SDGContribution(Base):
+    __tablename__ = "sdg_contributions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    donor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    goal = Column(String, nullable=False)  # "No Poverty", "Zero Hunger", etc.
+    contribution = Column(Integer, default=0)  # Percentage
+    icon = Column(String, default="🌱")  # Emoji icon
+    year = Column(Integer)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    # Relationship
+    donor = relationship("User", foreign_keys=[donor_id])
+
+
+class ROIData(Base):
+    __tablename__ = "roi_data"
+
+    id = Column(Integer, primary_key=True, index=True)
+    donor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    financial = Column(String, default="1:1")  # e.g., "1:3.5"
+    social = Column(String, default="0%")  # e.g., "92%"
+    environmental = Column(String, default="0%")  # e.g., "78%"
+    sustainability = Column(String, default="0%")  # e.g., "85%"
+    year = Column(Integer)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    # Relationship
+    donor = relationship("User", foreign_keys=[donor_id])
