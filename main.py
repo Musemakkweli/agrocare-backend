@@ -336,8 +336,7 @@ def register_user(user: schemas.UserRegister, db: Session = Depends(get_db)):
     db.refresh(new_user)
 
     return new_user
-
-# ======================from fastapi import Request
+# ======================
 # Login (email OR phone)
 # ======================
 @app.post("/login", response_model=schemas.LoginResponseWithMessage)
@@ -371,8 +370,24 @@ def login_user(
 
         raise HTTPException(400, "Invalid email or phone or password")
 
-    if not db_user.is_approved:
+    # Check approval status - Farmers don't need approval
+    if not db_user.is_approved and db_user.role != "farmer":
         raise HTTPException(403, "User not approved yet")
+    
+    # Log warning for unapproved farmers (optional)
+    if not db_user.is_approved and db_user.role == "farmer":
+        try:
+            from services.activity_logger import log_activity
+            log_activity(
+                db=db,
+                user_id=db_user.id,
+                activity_type="login",
+                description=f"Farmer logged in without approval",
+                metadata={"ip": request.client.host if request.client else "Unknown"},
+                status="warning"
+            )
+        except Exception:
+            pass
 
     # Automatically rehash old bcrypt passwords to argon2
     if pwd_context.needs_update(db_user.password):
@@ -441,8 +456,10 @@ def login_user(
         
         # 3. Role-specific notifications
         if db_user.role == "admin":
+            # For admin: show pending approvals (excluding farmers since they auto-approve)
             pending = db.query(models.User).filter(
-                models.User.is_approved == False
+                models.User.is_approved == False,
+                models.User.role != "farmer"  # Exclude farmers from pending count
             ).count()
             
             if pending > 0:
@@ -451,7 +468,7 @@ def login_user(
                     user_id=db_user.id,
                     role="admin",
                     title="⏳ Pending Approvals",
-                    message=f"You have {pending} users awaiting approval.",
+                    message=f"You have {pending} users awaiting approval (farmers auto-approved).",
                     type="pending_approvals",
                     priority="high",
                     action_url="/admin/approvals"
@@ -473,6 +490,23 @@ def login_user(
                     priority="high",
                     action_url="/complaints/pending"
                 )
+        
+        elif db_user.role == "farmer" and not db_user.is_approved:
+            # For unapproved farmers: notify them they're auto-approved
+            NotificationService.create_notification(
+                db=db,
+                user_id=db_user.id,
+                role="farmer",
+                title="✅ Auto-Approved Account",
+                message="Your farmer account is automatically approved. You can start using AgroCare immediately!",
+                type="account_approved",
+                priority="normal",
+                action_url="/dashboard"
+            )
+            
+            # Optionally auto-approve farmers
+            db_user.is_approved = True
+            db.commit()
         
     except Exception as e:
         print(f"⚠️ Login notification error: {str(e)}")
